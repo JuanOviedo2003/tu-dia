@@ -1,0 +1,60 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /roomAccess/{claimId} {
+      allow create: if request.auth != null
+        && request.auth.uid == claimId.split('_')[1]
+        && request.resource.data.role in ['editor', 'viewer']
+        && request.resource.data.proof is string
+        && request.resource.data.proof.size() == 64;
+
+      allow read: if request.auth != null
+        && request.auth.uid == claimId.split('_')[1];
+
+      allow update: if false;
+
+      allow delete: if request.auth != null
+        && get(/databases/$(database)/documents/rooms/$(claimId.split('_')[0])).data.ownerUid == request.auth.uid;
+    }
+
+    match /rooms/{roomId} {
+
+      function isValidClaim(role, tokenHash) {
+        let uid = request.auth.uid;
+        let claimId = roomId + '_' + uid;
+        let claimPath = /databases/$(database)/documents/roomAccess/$(claimId);
+        return exists(claimPath)
+          && get(claimPath).data.role == role
+          && get(claimPath).data.proof == tokenHash;
+      }
+
+      allow read: if request.auth != null
+        && (
+          resource.data.ownerUid == request.auth.uid
+          || isValidClaim('editor', resource.data.editTokenHash)
+          || isValidClaim('viewer', resource.data.viewTokenHash)
+        );
+
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.tasks is list
+        && request.resource.data.tasks.size() <= 500
+        && request.resource.data.tombstones is map
+        && request.resource.data.tombstones.size() <= 600;
+
+      allow update: if request.auth != null
+        && request.resource.data.tasks is list
+        && request.resource.data.tasks.size() <= 500
+        && request.resource.data.tombstones is map
+        && request.resource.data.tombstones.size() <= 600
+        && (
+          resource.data.ownerUid == request.auth.uid
+          || isValidClaim('editor', resource.data.editTokenHash)
+        );
+
+      allow delete: if request.auth != null
+        && resource.data.ownerUid == request.auth.uid;
+    }
+  }
+}

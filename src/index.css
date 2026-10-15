@@ -1,0 +1,29 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #FFB17A;      /* naranja cálido - primario */
+  --color-brand-2: #96ACB7;    /* azul grisáceo - secundario */
+  --color-accent: #DCED31;     /* lima - resaltado */
+  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-weight: 400;
+  background: #0b0f14;
+}
+
+/* Scrollbar discreto */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #96ACB7; border-radius: 4px; opacity: 0.4; }
+::-webkit-scrollbar-track { background: transparent; }
