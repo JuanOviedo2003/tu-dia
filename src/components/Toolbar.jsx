@@ -21,7 +21,7 @@ function statusColor(syncStatus) {
   }
 }
 
-export default function Toolbar({ year, month, onPrev, onNext, onToday, onQR, onMenu, onSync, syncStatus, room, roomRole, onQuickAdd }) {
+export default function Toolbar({ year, month, onPrev, onNext, onToday, onMenu, onSync, syncStatus, room, roomRole, onQuickAdd }) {
   const label = statusLabel(syncStatus, room)
   const colors = statusColor(syncStatus)
   return (
@@ -68,13 +68,6 @@ export default function Toolbar({ year, month, onPrev, onNext, onToday, onQR, on
             + Rápida
           </button>
         )}
-        <button
-          onClick={onQR}
-          className="rounded-md border border-brand/50 px-2 py-1 text-[length:clamp(0.65rem,0.7vw,0.9rem)] font-bold text-brand hover:bg-brand/10 sm:text-sm"
-          title="Ver QR"
-        >
-          QR
-        </button>
         <button onClick={onPrev} className="rounded-md border border-brand-2/40 px-2 py-1 text-brand-2 hover:bg-brand-2/10">
           ‹
         </button>

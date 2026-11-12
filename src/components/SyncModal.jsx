@@ -2,7 +2,7 @@
 import QRCode from 'qrcode'
 
 // Modal de sincronización: crea sala con tokens o únete con link.
-export default function SyncModal({ open, onClose, currentRoom, currentRole, onJoin, onCreateRoom, onRotateTokens, syncStatus }) {
+export default function SyncModal({ open, onClose, currentRoom, currentRole, onJoin, onCreateRoom, onRotateTokens, onLeaveRoom, syncStatus }) {
   const canvasRef = useRef(null)
   const [input, setInput] = useState('')
   const [qrTab, setQrTab] = useState('editor')
@@ -74,16 +74,16 @@ export default function SyncModal({ open, onClose, currentRoom, currentRole, onJ
     setError('')
     // Parsear URL completa o código simple
     try {
-const url = new URL(v)
-const room = url.searchParams.get('room')
-const token = url.searchParams.get('t')
-const role = url.searchParams.get('role')
-if (room && token) {
-  await onJoin(room.toUpperCase(), token, role)
-  setInput('')
-  onClose()
-  return
-}
+      const url = new URL(v)
+      const room = url.searchParams.get('room')
+      const token = url.searchParams.get('t')
+      const role = url.searchParams.get('role') || 'editor'
+    if (room && token) {
+      await onJoin(room.toUpperCase(), token, role)
+      setInput('')
+      onClose()
+      return
+    }
     } catch {
       // No es URL, tratar como código
     }
@@ -133,6 +133,16 @@ if (room && token) {
           <p className="mb-3 rounded-md border border-rose-500/40 bg-rose-500/10 p-2 text-xs text-rose-300">
             {error}
           </p>
+        )}
+
+        {/* ── Olvidar dispositivo ───────────────────────────────────────── */}
+        {currentRoom && (
+          <button
+            onClick={onLeaveRoom}
+            className="w-full rounded-md border border-rose-500/40 px-3 py-1.5 text-[10px] font-bold text-rose-300 hover:bg-rose-500/10 disabled:opacity-50 mb-3"
+          >
+            Olvidar este dispositivo
+          </button>
         )}
 
         {/* ── Crear sala ─────────────────────────────────────────────── */}

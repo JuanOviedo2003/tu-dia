@@ -173,7 +173,7 @@ export function createSync({ getState, onState, onStatus }) {
   // NOTA: NO hacer getDoc antes — las reglas niegan `read` en docs inexistentes
   // (resource es null → resource.data falla → permission-denied). Las reglas ya
   // distinguen create vs update: `create` valida campos; `update` exige ser owner.
-  async function createRoom(roomCode, editTokenHash, viewTokenHash) {
+  async function createRoom(roomCode, editTokenHash, viewTokenHash, initialTasks, initialTombstones) {
     await authReady
     const user = auth.currentUser
     if (!user) return { ok: false, error: 'no-auth' }
@@ -183,8 +183,8 @@ export function createSync({ getState, onState, onStatus }) {
         ownerUid: user.uid,
         editTokenHash,
         viewTokenHash,
-        tasks: [],
-        tombstones: {},
+        tasks: initialTasks || [],
+        tombstones: initialTombstones || {},
       })
       return { ok: true }
     } catch (err) {
@@ -243,6 +243,7 @@ export function createSync({ getState, onState, onStatus }) {
     createRoom,
     rotateTokens,
     adoptLegacyRoom,
+    stop: teardown,
     isConnected: () => connected,
   }
 }

@@ -7,9 +7,9 @@ import { generateRoomTokens } from '../lib/tokens'
 
 const stamp = () => Date.now()
 
-export function useTasks() {
-  const [tasks, setTasks] = useState(() => loadTasks())
-  const [tombstones, setTombstones] = useState(() => loadTombstones())
+export function useTasks(roomRole) {
+  const [tasks, setTasks] = useState([])
+  const [tombstones, setTombstones] = useState({})
   const [syncStatus, setSyncStatus] = useState('offline')
 
   const tasksRef = useRef(tasks)
@@ -20,8 +20,8 @@ export function useTasks() {
   const applyingRemote = useRef(false)
 
   const sync = useMemo(
-    () =>
-      createSync({
+    () => {
+      const s = createSync({
         getState: () => ({ tasks: tasksRef.current, tombstones: tombRef.current }),
         onState: (next) => {
           applyingRemote.current = true
@@ -30,7 +30,9 @@ export function useTasks() {
           applyingRemote.current = false
         },
         onStatus: (s) => setSyncStatus(s),
-      }),
+      })
+      return s
+    },
     [],
   )
 
@@ -243,14 +245,15 @@ export function useTasks() {
 
   const initSync = useCallback((roomId, token, role) => sync.start(roomId, token, role), [sync])
 
-  // Crea sala nueva: genera código + tokens, crea doc en Firestore.
+  // Crea sala nueva: genera código + tokens, crea doc en Firestore
+  // con el snapshot completo de tareas y tombstones locales.
   const createRoomSync = useCallback(async () => {
     const roomCode = uid().slice(0, 10).toUpperCase()
     const tokens = await generateRoomTokens()
-    const result = await sync.createRoom(roomCode, tokens.editTokenHash, tokens.viewTokenHash)
+    const result = await sync.createRoom(roomCode, tokens.editTokenHash, tokens.viewTokenHash, tasks, tombstones)
     if (!result.ok) return { ok: false, error: result.error }
     return { ok: true, roomCode, editToken: tokens.editToken, viewToken: tokens.viewToken }
-  }, [sync])
+  }, [sync, tasks, tombstones])
 
   // Rota tokens de una sala (solo owner).
   const rotateTokensSync = useCallback(async (roomCode) => {
@@ -276,5 +279,6 @@ export function useTasks() {
     initSync,
     createRoom: createRoomSync,
     rotateTokens: rotateTokensSync,
+    stop: sync.stop,
   }
 }

@@ -13,21 +13,32 @@ import {
 import { MINUTES_PER_DAY, statusMeta } from './lib/constants'
 import { minutesToLabel } from './lib/time'
 import { useTasks } from './hooks/useTasks'
-import { todayStr } from './lib/storage'
-import { readShareTasks, clearShareParam, compressTasks } from './lib/share'
+import {
+  todayStr,
+  saveRoomCode,
+  loadRoomCode,
+  saveToken,
+  loadToken,
+  saveRole,
+  loadRole,
+} from './lib/storage'
 import Toolbar from './components/Toolbar'
 import Sidebar from './components/Sidebar'
 import Calendar from './components/Calendar'
 import DayBoard from './components/DayBoard'
 import TaskModal from './components/TaskModal'
 import QuickAddBar from './components/QuickAddBar'
-import QRModal from './components/QRModal'
 import SyncModal from './components/SyncModal'
 
 // Estados de sala: idle (local), validating, denied, not-found, editor, viewer
 const ROOM_STATES = { IDLE: 'idle', VALIDATING: 'validating', DENIED: 'denied', NOT_FOUND: 'not-found', EDITOR: 'editor', VIEWER: 'viewer' }
 
 export default function App() {
+  // ── Room state machine ────────────────────────────────────────────────
+  const [roomState, setRoomState] = useState(ROOM_STATES.IDLE)
+  const [roomCode, setRoomCode] = useState('')
+  const [roomRole, setRoomRole] = useState('') // 'editor' | 'viewer'
+
   const {
     tasks,
     syncStatus,
@@ -44,7 +55,7 @@ export default function App() {
     initSync,
     createRoom,
     rotateTokens,
-  } = useTasks()
+  } = useTasks(roomRole)
 
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
@@ -53,36 +64,32 @@ export default function App() {
   const [selectedDay, setSelectedDay] = useState(null)
   const [modal, setModal] = useState({ open: false, initial: null, defaultDay: null })
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [qrOpen, setQrOpen] = useState(false)
   const [syncOpen, setSyncOpen] = useState(false)
-  const [shareD, setShareD] = useState('')
   const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [toast, setToast] = useState(null) // { label, onUndo } captura rápida
-  const [devInfo, setDevInfo] = useState(null)
   // Clon visual del arrastre (DragOverlay). La apariencia cambia según la
   // vista de origen: barra fina (calendario), tarjeta (kanban/backlog).
   // Timeline mueve su propio bloque (re-tiempo) -> sin overlay.
   const [activeDrag, setActiveDrag] = useState(null) // { id, task }
   const timelineRef = useRef(null)
 
-  // ── Room state machine ────────────────────────────────────────────────
-  const [roomState, setRoomState] = useState(ROOM_STATES.IDLE)
-  const [roomCode, setRoomCode] = useState('')
-  const [roomRole, setRoomRole] = useState('') // 'editor' | 'viewer'
-
-  // Parseo URL: ?room=CODE&t=TOKEN
+  // Persistencia y URL: URL tiene prioridad sobre storage; un solo efecto de entrada.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const urlRoom = params.get('room')
     const urlToken = params.get('t')
-const urlRole = params.get('role')
+    const urlRole = params.get('role')
+
     if (urlRoom && urlToken) {
+      // URL trae sala y token: prioridad absoluta
       const code = urlRoom.toUpperCase().replace(/-V$/, '')
       setRoomCode(code)
       setRoomState(ROOM_STATES.VALIDATING)
-      // El sync se inicia cuando auth esté listo (useTasks maneja auth)
-      initSync(code, urlToken, urlRole || 'editor') // TODO: determinar role por token
-      // Limpiar URL sin recargar
+      const role = urlRole || 'editor'
+      setRoomRole(role)
+      saveRole(role)
+      initSync(code, urlToken, role)
+      // Limpiar URL después de resolver
       const url = new URL(window.location.href)
       url.searchParams.delete('room')
       url.searchParams.delete('t')
@@ -92,38 +99,51 @@ const urlRole = params.get('role')
       // Legacy: ?room=CODE sin token → denegar
       setRoomCode(urlRoom.toUpperCase().replace(/-V$/, ''))
       setRoomState(ROOM_STATES.DENIED)
+    } else {
+      // Sin URL: intentar restaurar desde storage, pero solo si hay credenciales completas
+      const storedRoomCode = loadRoomCode()
+      const storedToken = loadToken()
+      const storedRole = loadRole()
+
+      if (storedRoomCode && storedToken) {
+        setRoomCode(storedRoomCode)
+        setRoomState(ROOM_STATES.VALIDATING)
+        initSync(storedRoomCode, storedToken, storedRole || 'editor')
+        // Limpiar params de URL por si vienen de antes (ahora que usamos storage)
+        const url = new URL(window.location.href)
+        url.searchParams.delete('room')
+        url.searchParams.delete('t')
+        url.searchParams.delete('role')
+        window.history.replaceState({}, '', url.toString())
+      } else {
+        // Sin credenciales ni URL: mantener modo local (roomState IDLE)
+        setRoomCode('')
+        setRoomState(ROOM_STATES.IDLE)
+      }
     }
-  }, []) // solo al montar
+  }, [initSync])
 
   // Observar syncStatus para determinar estado de sala
   useEffect(() => {
     if (syncStatus === 'online' && roomState === ROOM_STATES.VALIDATING) {
-      setRoomState(ROOM_STATES.EDITOR) // o VIEWER, se determina después
+      setRoomState(roomRole === 'viewer' ? ROOM_STATES.VIEWER : ROOM_STATES.EDITOR)
     } else if (syncStatus === 'auth-error') {
       setRoomState(ROOM_STATES.DENIED)
+      // Limpiar credenciales inválidas al entrar en DENIED
+      saveRoomCode(null)
+      saveToken(null)
+      saveRole(null)
     } else if (syncStatus === 'room-not-found') {
       setRoomState(ROOM_STATES.NOT_FOUND)
+      // Limpiar credenciales inválidas al entrar en NOT_FOUND
+      saveRoomCode(null)
+      saveToken(null)
+      saveRole(null)
     }
-  }, [syncStatus, roomState])
+  }, [syncStatus, roomState, roomRole, saveRoomCode, saveToken, saveRole])
 
-  const isViewer = roomState === ROOM_STATES.VIEWER
+  const isViewer = roomRole === 'viewer'
   const inRoom = roomState === ROOM_STATES.EDITOR || roomState === ROOM_STATES.VIEWER
-
-  // ── URL share data ───────────────────────────────────────────────────
-  useEffect(() => {
-    const shared = readShareTasks()
-    if (shared) {
-      replaceTasks(shared)
-      clearShareParam()
-    }
-  }, [replaceTasks])
-
-  useEffect(() => {
-    fetch('/__dev-info')
-      .then((r) => r.json())
-      .then((d) => setDevInfo(d))
-      .catch(() => setDevInfo({ ips: [], port: null }))
-  }, [])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
@@ -224,15 +244,14 @@ const urlRole = params.get('role')
     setMonth(d.getMonth())
   }
 
-  const openQR = () => {
-    setShareD(compressTasks(tasks))
-    setQrOpen(true)
-  }
-
 const joinRoom = (code, token, role) => {
   setRoomCode(code)
   setRoomState(ROOM_STATES.VALIDATING)
-  initSync(code, token, role || 'editor')
+  saveRoomCode(code)
+  saveToken(token)
+  saveRole(role)
+  setRoomRole(role)
+  initSync(code, token, role)
   setSyncOpen(false)
 }
 
@@ -241,6 +260,10 @@ const joinRoom = (code, token, role) => {
     if (result.ok) {
       setRoomCode(result.roomCode)
       setRoomState(ROOM_STATES.EDITOR)
+      saveRoomCode(result.roomCode)
+      saveToken(result.editToken)
+      saveRole('editor')
+      setRoomRole('editor')
       initSync(result.roomCode, result.editToken, 'editor')
     }
     return result
@@ -249,6 +272,17 @@ const joinRoom = (code, token, role) => {
   const handleRotateTokens = async () => {
     if (!roomCode) return
     return await rotateTokens(roomCode)
+  }
+
+  const leaveRoom = () => {
+    stop()
+    saveRoomCode(null)
+    saveToken(null)
+    saveRole(null)
+    setRoomCode('')
+    setRoomState(ROOM_STATES.IDLE)
+    setRoomRole('')
+    setSyncOpen(false)
   }
 
   const handleDragStart = (event) => {
@@ -373,7 +407,6 @@ const joinRoom = (code, token, role) => {
           onPrev={() => changeMonth(-1)}
           onNext={() => changeMonth(1)}
           onToday={goToday}
-          onQR={openQR}
           onMenu={() => setSidebarOpen(true)}
           onSync={() => setSyncOpen(true)}
           syncStatus={syncStatus}
@@ -424,11 +457,10 @@ const joinRoom = (code, token, role) => {
           onClose={closeModal}
         />
 
-        <QRModal d={qrOpen ? shareD : ''} devInfo={qrOpen ? devInfo : null} onClose={() => setQrOpen(false)} />
-
         <SyncModal
           open={syncOpen}
           onClose={() => setSyncOpen(false)}
+          onLeaveRoom={leaveRoom}
           currentRoom={inRoom ? roomCode : ''}
           currentRole={roomRole}
           onJoin={joinRoom}

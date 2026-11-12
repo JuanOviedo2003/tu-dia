@@ -4,6 +4,9 @@ import { uid } from './constants'
 
 const KEY = 'tu-dia-tasks-v1'
 const TOMB_KEY = 'tu-dia-tombstones-v1'
+const ROOM_KEY = 'tu-dia-room-v1'
+const TOKEN_KEY = 'tu-dia-token-v1'
+const ROLE_KEY = 'tu-dia-role-v1'
 
 function seed() {
   const today = toDateStr(new Date())
@@ -86,6 +89,54 @@ export function saveTombstones(tombstones) {
     localStorage.setItem(TOMB_KEY, JSON.stringify(tombstones || {}))
   } catch {
     /* almacenamiento lleno o no disponible: ignorar */
+  }
+}
+
+export function saveRoomCode(code) {
+  try {
+    if (code == null) localStorage.removeItem(ROOM_KEY)
+    else localStorage.setItem(ROOM_KEY, code)
+  } catch { /* almacenamiento lleno o no disponible: ignorar */ }
+}
+
+export function loadRoomCode() {
+  try {
+    const raw = localStorage.getItem(ROOM_KEY)
+    return raw || null
+  } catch {
+    return null
+  }
+}
+
+export function saveToken(token) {
+  try {
+    if (token == null) localStorage.removeItem(TOKEN_KEY)
+    else localStorage.setItem(TOKEN_KEY, token)
+  } catch { /* almacenamiento lleno o no disponible: ignorar */ }
+}
+
+export function loadToken() {
+  try {
+    const raw = localStorage.getItem(TOKEN_KEY)
+    return raw || null
+  } catch {
+    return null
+  }
+}
+
+export function saveRole(role) {
+  try {
+    if (role == null) localStorage.removeItem(ROLE_KEY)
+    else localStorage.setItem(ROLE_KEY, role)
+  } catch { /* almacenamiento lleno o no disponible: ignorar */ }
+}
+
+export function loadRole() {
+  try {
+    const raw = localStorage.getItem(ROLE_KEY)
+    return raw || null
+  } catch {
+    return null
   }
 }
 
