@@ -1,21 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { fromDateStr } from '../lib/storage'
 import { STATUSES } from '../lib/constants'
+import { useIsMobile } from '../hooks/useMediaQuery'
 import DayTimeline from './DayTimeline'
 import BoardColumn from './BoardColumn'
-
-function useIsMobile() {
-  const [mobile, setMobile] = useState(
-    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
-  )
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
-    const onChange = () => setMobile(mq.matches)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
-  return mobile
-}
 
 // Modal del día. Escritorio: línea de tiempo + 4 columnas. Móvil: una sola
 // columna a la vez con tabs (un único scroll principal, sin scroll horizontal).

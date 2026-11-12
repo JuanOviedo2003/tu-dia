@@ -63,7 +63,6 @@ export default function App() {
   // vista de origen: barra fina (calendario), tarjeta (kanban/backlog).
   // Timeline mueve su propio bloque (re-tiempo) -> sin overlay.
   const [activeDrag, setActiveDrag] = useState(null) // { id, task }
-  const [dragDebug, setDragDebug] = useState(null) // TEMP: diagnóstico de drop
   const timelineRef = useRef(null)
 
   // ── Room state machine ────────────────────────────────────────────────
@@ -256,12 +255,6 @@ const joinRoom = (code, token, role) => {
     if (isViewer) return
     const task = event.active.data.current?.task ?? null
     if (task) setActiveDrag({ id: String(event.active.id), task })
-    setDragDebug(`START ${event.active.id}`)
-  }
-
-  const handleDragMove = (event) => {
-    const overId = event.over ? event.over.id : 'NULL'
-    setDragDebug(`over: ${overId}`)
   }
 
   const handleDragEnd = (event) => {
@@ -272,12 +265,12 @@ const joinRoom = (code, token, role) => {
     const { active, over } = event
     const fromTimeline = active.data.current?.from === 'timeline'
     setActiveDrag(null)
-    if (!over) { setDragDebug('END: over=null (sin objetivo)'); setTimeout(() => setDragDebug(null), 4000); return }
+    if (!over) return
     const task = active.data.current?.task
-    if (!task) { setDragDebug(null); return }
+    if (!task) return
     const overId = String(over.id)
     // Timeline solo re-tiempo: no permitir soltar bloque sobre kanban/día.
-    if (fromTimeline && overId !== 'timeline') { setDragDebug(null); return }
+    if (fromTimeline && overId !== 'timeline') return
     if (overId.startsWith('col:')) {
       const status = overId.slice(4)
       const patch = { status }
@@ -300,7 +293,6 @@ const joinRoom = (code, token, role) => {
         setStartTime(task.id, mins)
       }
     }
-    setDragDebug(null)
   }
 
   // ── UI: sala no encontrada ────────────────────────────────────────────
@@ -363,7 +355,6 @@ const joinRoom = (code, token, role) => {
       sensors={sensors}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
-      onDragMove={(e) => setDragDebug(`over: ${e.over ? e.over.id : 'NULL'}`)}
       // Timeline solo vive en su carril: excluir todos los demás droppables
       // cuando el drag nace en la línea de tiempo.
       collisionDetection={(args) => {
@@ -479,13 +470,6 @@ const joinRoom = (code, token, role) => {
           </div>
         )}
       </div>
-
-        {/* DEBUG TEMP: diagnóstico de drag — quitar tras verificar */}
-        {dragDebug && (
-          <div className="fixed left-2 top-20 z-[999] rounded border border-accent bg-slate-950/95 px-2 py-1 font-mono text-xs text-accent">
-            {dragDebug}
-          </div>
-        )}
 
         {/* Clon visual del elemento arrastrado. Calendario -> barra fina;
           kanban/backlog -> tarjeta. Timeline no usa overlay. */}

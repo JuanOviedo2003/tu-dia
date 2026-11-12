@@ -1,8 +1,9 @@
-﻿import { useEffect, useRef, useState } from 'react'
+﻿import { useEffect, useRef } from 'react'
 import { useDroppable } from '@dnd-kit/core'
 import { statusMeta, MINUTES_PER_DAY } from '../lib/constants'
 import { todayStr } from '../lib/storage'
 import { minutesToLabel } from '../lib/time'
+import { useIsMobile } from '../hooks/useMediaQuery'
 import { Draggable } from './Drag'
 
 const PX_PER_MIN = 2
@@ -26,19 +27,6 @@ function assignLanes(tasks) {
     placed.push({ task: t, lane: laneIdx })
   }
   return { placed, laneCount: Math.max(1, lanes.length) }
-}
-
-function useIsMobile() {
-  const [m, setM] = useState(
-    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
-  )
-  useEffect(() => {
-    const mq = window.matchMedia('(max-width: 767px)')
-    const onChange = () => setM(mq.matches)
-    mq.addEventListener('change', onChange)
-    return () => mq.removeEventListener('change', onChange)
-  }, [])
-  return m
 }
 
 export default function DayTimeline({ dayTasks, containerRef, dateStr, isViewer = false }) {
