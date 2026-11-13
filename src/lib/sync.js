@@ -16,14 +16,12 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated })
   let unsub = null
   let docRef = null
   let pushTimer = null
-  let connected = false
   let claimReady = false
   let retryCount = 0
   let retryTimer = null
   let session = 0
 
   function setStatus(s) {
-    connected = s === 'online'
     if (s === 'online') retryCount = 0
     onStatus?.(s)
   }
@@ -266,12 +264,10 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated })
 
   return {
     start,
-    setRoom: start,
     push,
     createRoom,
     renewViewToken,
     rotateEditToken,
     stop: teardown,
-    isConnected: () => connected,
   }
 }

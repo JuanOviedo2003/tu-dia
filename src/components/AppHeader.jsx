@@ -6,12 +6,11 @@ import IconButton from './ui/IconButton'
 import SegmentedControl from './ui/SegmentedControl'
 import SyncIndicator from './SyncIndicator'
 
-function MobileHeader({ titleShort, eyebrow, progress, onPrev, onNext, prevLabel, nextLabel, onMenu }) {
+function MobileHeader({ titleShort, eyebrow, progress, onPrev, onNext, prevLabel, nextLabel }) {
   return (
     <header className="border-b border-s3 bg-s1 px-4 pb-3 pt-4">
       <div className="flex items-center gap-1">
-        <IconButton icon="menu" label="Menú" onClick={onMenu} className="-ml-2" />
-        <IconButton icon="chevron-left" label={prevLabel} onClick={onPrev} />
+        <IconButton icon="chevron-left" label={prevLabel} onClick={onPrev} className="-ml-2" />
         <div className="min-w-0 flex-1 text-center">
           {eyebrow && <p className="text-small font-medium text-accent">{eyebrow}</p>}
           <h1 className="truncate text-title font-semibold text-t1">{titleShort}</h1>

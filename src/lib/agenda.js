@@ -46,16 +46,30 @@ export function assignLanes(dayTasks) {
   return { placed, laneCount: Math.max(1, laneEnds.length) }
 }
 
-export function dayProgress(dayTasks) {
-  const total = dayTasks.length
-  const done = dayTasks.filter((t) => t.status === 'done').length
-  return { done, total, percent: total === 0 ? 0 : Math.round((done / total) * 100) }
+function dayTone(dayTasks, dayStr, today = todayStr()) {
+  if (dayTasks.length === 0) return null
+  if (dayTasks.every((t) => t.status === 'done')) return 'done'
+  if (dayStr < today) return 'danger'
+  if (dayTasks.every((t) => t.status === 'todo')) return 'todo'
+  return 'doing'
 }
 
-export function progressTone(percent) {
-  if (percent >= 100) return 'done'
-  if (percent > 33) return 'doing'
-  return 'todo'
+export function dayProgress(dayTasks, dayStr, today = todayStr()) {
+  const total = dayTasks.length
+  const done = dayTasks.filter((t) => t.status === 'done').length
+  return {
+    done,
+    total,
+    percent: total === 0 ? 0 : Math.round((done / total) * 100),
+    tone: dayTone(dayTasks, dayStr, today),
+  }
+}
+
+export function dayStatusText({ done, total, tone }) {
+  if (total === 0) return 'Sin tareas'
+  if (tone === 'danger') return `${total - done} sin hacer`
+  if (tone === 'done') return 'Todo hecho'
+  return `${done} ${done === 1 ? 'hecha' : 'hechas'} de ${total}`
 }
 
 export function isOverdue(task, today = todayStr()) {

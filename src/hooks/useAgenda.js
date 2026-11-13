@@ -22,11 +22,15 @@ export const ROOM_STATES = {
 
 const NO_TOKENS = { editToken: null, viewToken: null }
 
+function saveRoomCredentials(code, token, role, viewToken) {
+  saveRoomCode(code)
+  saveToken(token)
+  saveRole(role)
+  saveViewToken(viewToken)
+}
+
 function clearRoomCredentials() {
-  saveRoomCode(null)
-  saveToken(null)
-  saveRole(null)
-  saveViewToken(null)
+  saveRoomCredentials(null, null, null, null)
 }
 
 function clearRoomParams() {
@@ -37,8 +41,7 @@ function clearRoomParams() {
   window.history.replaceState({}, '', url.toString())
 }
 
-function readTokens(role) {
-  const token = loadToken()
+function readTokens(role, token) {
   if (role === 'viewer') return { editToken: null, viewToken: token }
   return { editToken: token, viewToken: loadViewToken() }
 }
@@ -112,7 +115,7 @@ export function useAgenda() {
         setRoomCode(storedRoomCode)
         setRoomState(ROOM_STATES.VALIDATING)
         setRoomRole(storedRole)
-        setTokens(readTokens(storedRole))
+        setTokens(readTokens(storedRole, storedToken))
         initSync(storedRoomCode, storedToken, storedRole)
         clearRoomParams()
       } else {
@@ -127,10 +130,7 @@ export function useAgenda() {
       const creds = pendingCreds.current
       if (creds) {
         pendingCreds.current = null
-        saveRoomCode(creds.code)
-        saveToken(creds.token)
-        saveRole(creds.role)
-        saveViewToken(null)
+        saveRoomCredentials(creds.code, creds.token, creds.role, null)
       }
       setRoomState(roomRole === 'viewer' ? ROOM_STATES.VIEWER : ROOM_STATES.EDITOR)
     } else if (syncStatus === 'auth-error' || syncStatus === 'room-not-found') {
@@ -148,10 +148,7 @@ export function useAgenda() {
       setPendingJoin(null)
       setRoomCode(result.roomCode)
       setRoomState(ROOM_STATES.EDITOR)
-      saveRoomCode(result.roomCode)
-      saveToken(result.editToken)
-      saveViewToken(result.viewToken)
-      saveRole('editor')
+      saveRoomCredentials(result.roomCode, result.editToken, 'editor', result.viewToken)
       setRoomRole('editor')
       setTokens({ editToken: result.editToken, viewToken: result.viewToken })
       initSync(result.roomCode, result.editToken, 'editor')
@@ -161,25 +158,18 @@ export function useAgenda() {
 
   const canManageTokens = Boolean(roomCode) && roomRole === 'editor'
 
-  const renewViewToken = async () => {
+  const manageToken = async (action, field, persist) => {
     if (!canManageTokens) return { ok: false, error: 'not-editor' }
-    const result = await renewView(roomCode)
+    const result = await action(roomCode)
     if (result.ok) {
-      saveViewToken(result.viewToken)
-      setTokens((prev) => ({ ...prev, viewToken: result.viewToken }))
+      persist(result[field])
+      setTokens((prev) => ({ ...prev, [field]: result[field] }))
     }
     return result
   }
 
-  const rotateEditToken = async () => {
-    if (!canManageTokens) return { ok: false, error: 'not-editor' }
-    const result = await rotateEdit(roomCode)
-    if (result.ok) {
-      saveToken(result.editToken)
-      setTokens((prev) => ({ ...prev, editToken: result.editToken }))
-    }
-    return result
-  }
+  const renewViewToken = () => manageToken(renewView, 'viewToken', saveViewToken)
+  const rotateEditToken = () => manageToken(rotateEdit, 'editToken', saveToken)
 
   const resetToLocal = () => {
     pendingCreds.current = null

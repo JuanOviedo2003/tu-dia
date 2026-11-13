@@ -93,69 +93,29 @@ export function saveTombstones(tombstones) {
   }
 }
 
-export function saveRoomCode(code) {
+function saveItem(key, value) {
   try {
-    if (code == null) localStorage.removeItem(ROOM_KEY)
-    else localStorage.setItem(ROOM_KEY, code)
+    if (value == null) localStorage.removeItem(key)
+    else localStorage.setItem(key, value)
   } catch { /* almacenamiento lleno o no disponible: ignorar */ }
 }
 
-export function loadRoomCode() {
+function loadItem(key) {
   try {
-    const raw = localStorage.getItem(ROOM_KEY)
-    return raw || null
+    return localStorage.getItem(key) || null
   } catch {
     return null
   }
 }
 
-export function saveToken(token) {
-  try {
-    if (token == null) localStorage.removeItem(TOKEN_KEY)
-    else localStorage.setItem(TOKEN_KEY, token)
-  } catch { /* almacenamiento lleno o no disponible: ignorar */ }
-}
-
-export function loadToken() {
-  try {
-    const raw = localStorage.getItem(TOKEN_KEY)
-    return raw || null
-  } catch {
-    return null
-  }
-}
-
-export function saveViewToken(token) {
-  try {
-    if (token == null) localStorage.removeItem(VIEW_TOKEN_KEY)
-    else localStorage.setItem(VIEW_TOKEN_KEY, token)
-  } catch { /* almacenamiento lleno o no disponible: ignorar */ }
-}
-
-export function loadViewToken() {
-  try {
-    const raw = localStorage.getItem(VIEW_TOKEN_KEY)
-    return raw || null
-  } catch {
-    return null
-  }
-}
-
-export function saveRole(role) {
-  try {
-    if (role == null) localStorage.removeItem(ROLE_KEY)
-    else localStorage.setItem(ROLE_KEY, role)
-  } catch { /* almacenamiento lleno o no disponible: ignorar */ }
-}
-
-export function loadRole() {
-  try {
-    const raw = localStorage.getItem(ROLE_KEY)
-    return raw || null
-  } catch {
-    return null
-  }
-}
+export const saveRoomCode = (code) => saveItem(ROOM_KEY, code)
+export const loadRoomCode = () => loadItem(ROOM_KEY)
+export const saveToken = (token) => saveItem(TOKEN_KEY, token)
+export const loadToken = () => loadItem(TOKEN_KEY)
+export const saveViewToken = (token) => saveItem(VIEW_TOKEN_KEY, token)
+export const loadViewToken = () => loadItem(VIEW_TOKEN_KEY)
+export const saveRole = (role) => saveItem(ROLE_KEY, role)
+export const loadRole = () => loadItem(ROLE_KEY)
 
 export function toDateStr(d) {
   const y = d.getFullYear()

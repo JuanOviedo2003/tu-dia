@@ -207,7 +207,12 @@ async function rulesSuite() {
     const d = (await read(owner, `rooms/${L1}`)).data()
     if ('editTokenHash' in d || 'viewTokenHash' in d) throw new Error('hashes siguen en rooms')
   })
-  await deny(7, 'migracion repetida L1 por editor (roomKeys ya existe -> update, y rooms sin hashes)', () => migrateBatch(editor, L1, fake, fake))
+  await allow(7, 'migracion repetida L1 por editor valido (= rotacion de ambas claves)', () => migrateBatch(editor, L1, H(lE2), H(lV)))
+  await deny(7, 'migracion repetida L1 por editor con hash viejo', async () => {
+    const tmp = await makeUser('tmpOldLegacyEditor')
+    await claim(tmp, L1, 'editor', H(lE))
+    await migrateBatch(tmp, L1, fake, fake)
+  })
 
   await allow(7, 'migracion L2 por owner (batch)', async () => {
     await claim(viewer, L2, 'viewer', H(lV))

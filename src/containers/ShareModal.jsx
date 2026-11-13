@@ -5,24 +5,21 @@ import ConfirmDialog from '../components/ConfirmDialog'
 
 const CONFIRM_COPY = {
   leave: {
-    title: 'Olvidar este dispositivo',
+    title: 'Dejar de sincronizar este dispositivo',
     message:
-      'Este dispositivo saldrá de la sala y borrará sus credenciales. Si es el único con el link de edición, perderás el acceso.',
-    confirmLabel: 'Olvidar',
-    confirmVariant: 'danger',
+      'Este dispositivo dejará de sincronizar y borrará sus credenciales. Si es el único con el link de edición, perderás el acceso.',
+    confirmLabel: 'Dejar de sincronizar',
   },
   renewView: {
     title: 'Renovar link de solo ver',
     message: 'Los links de solo ver anteriores dejarán de funcionar. Los editores no se ven afectados.',
     confirmLabel: 'Renovar',
-    confirmVariant: 'danger',
   },
   rotateEdit: {
-    title: 'Rotar token de editor',
+    title: 'Renovar link de edición',
     message:
       'Los links de edición anteriores dejarán de funcionar. Los demás dispositivos editores tendrán que volver a unirse con el link nuevo.',
-    confirmLabel: 'Rotar',
-    confirmVariant: 'danger',
+    confirmLabel: 'Renovar',
   },
 }
 
@@ -68,6 +65,12 @@ export default function ShareModal({
           onToggleQr={share.toggleQr}
           copiedLabel={share.copied}
           onCopy={share.copyToClipboard}
+          canNativeShare={share.canNativeShare}
+          onNativeShare={share.nativeShare}
+          moreOpen={share.moreOpen}
+          onToggleMore={share.toggleMore}
+          joinOpen={share.joinOpen}
+          onToggleJoin={share.toggleJoin}
           creating={share.creating}
           renewing={share.renewing}
           rotatingEdit={share.rotatingEdit}
@@ -92,7 +95,7 @@ export default function ShareModal({
         title={confirmCopy.title}
         message={confirmCopy.message}
         confirmLabel={confirmCopy.confirmLabel}
-        confirmVariant={confirmCopy.confirmVariant}
+        confirmVariant="danger"
         onConfirm={share.runConfirm}
         onCancel={share.cancelConfirm}
         busy={share.busy}

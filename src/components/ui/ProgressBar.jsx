@@ -1,8 +1,8 @@
 import { cx } from '../../lib/cx'
 
-const FILL = { todo: 'bg-todo', doing: 'bg-doing', done: 'bg-done' }
+export const TONE_FILL = { todo: 'bg-todo', doing: 'bg-doing', done: 'bg-done', danger: 'bg-danger' }
 
-export default function ProgressBar({ percent, tone = 'done', className, label }) {
+export default function ProgressBar({ percent, tone, className, label }) {
   return (
     <div
       {...(label
@@ -10,7 +10,7 @@ export default function ProgressBar({ percent, tone = 'done', className, label }
         : { 'aria-hidden': true })}
       className={cx('h-1.5 overflow-hidden rounded-[3px] bg-s3', className)}
     >
-      <div className={cx('h-full rounded-[3px]', FILL[tone])} style={{ width: `${percent}%` }} />
+      <div className={cx('h-full rounded-[3px]', TONE_FILL[tone ?? 'done'])} style={{ width: `${percent}%` }} />
     </div>
   )
 }

@@ -22,9 +22,9 @@ export const DEFAULT_REPEAT_MONTHS = 6
 export const REPEAT_LABELS = { week: 'Cada semana', month: 'Cada mes' }
 
 export const VIEWS = [
-  { value: 'day', label: 'Día' },
-  { value: 'timeline', label: 'Línea de tiempo' },
-  { value: 'month', label: 'Mes' },
+  { value: 'day', label: 'Día', short: 'Día' },
+  { value: 'timeline', label: 'Línea de tiempo', short: 'Línea' },
+  { value: 'month', label: 'Mes', short: 'Mes' },
 ]
 
 export function uid() {

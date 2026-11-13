@@ -1,10 +1,9 @@
-import { dayProgress, formatDayLong, progressTone } from '../lib/agenda'
+import { dayProgress, dayStatusText, formatDayLong } from '../lib/agenda'
 
-export function useDaySummary(dayStr, dayTasks) {
-  const progress = dayProgress(dayTasks)
+export function useDaySummary(dayStr, dayTasks, today) {
+  const progress = dayProgress(dayTasks, dayStr, today)
   return {
     progress,
-    tone: progressTone(progress.percent),
-    label: `${formatDayLong(dayStr)}, ${progress.done} de ${progress.total} hechas`,
+    label: `${formatDayLong(dayStr)}, ${dayStatusText(progress).toLowerCase()}`,
   }
 }

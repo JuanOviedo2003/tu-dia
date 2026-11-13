@@ -3,7 +3,7 @@ import StatusIcon from './ui/StatusIcon'
 
 export default function StatusTabs({ groups, value, onChange }) {
   return (
-    <nav aria-label="Estados" className="grid grid-cols-4 gap-1.5 border-t border-s3 bg-s1 px-2.5 pb-[22px] pt-1.5">
+    <nav aria-label="Estados" className="grid grid-cols-4 gap-1.5 border-t border-s3 bg-s1 px-2.5 py-1.5">
       {groups.map(({ status, tasks }) => (
         <StatusButton
           key={status.key}

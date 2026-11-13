@@ -1,14 +1,31 @@
 import { useEffect, useRef, useState } from 'react'
 
 const QR_COLORS = { dark: '#1B1F24', light: '#F1F3F5' }
+const QR_OPTS = { width: 240, margin: 2, errorCorrectionLevel: 'M', color: QR_COLORS }
 
-function describeStatus({ online, authError, roomNotFound, offline }) {
-  if (online) return { text: 'sincronizado', icon: 'done' }
-  if (authError) return { text: 'token inválido', icon: 'danger' }
-  if (roomNotFound) return { text: 'sala no encontrada', icon: 'danger' }
-  if (offline) return { text: 'sin conexión', icon: 'todo' }
-  return { text: 'conectando...', icon: 'inprogress' }
+function useQrCanvas(ref, url, enabled) {
+  useEffect(() => {
+    if (!enabled || !url || !ref.current) return
+    let cancelled = false
+    import('qrcode').then(({ default: QRCode }) => {
+      if (cancelled || !ref.current) return
+      QRCode.toCanvas(ref.current, url, QR_OPTS).catch(() => {})
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [enabled, url])
 }
+
+function describeStatus({ online, authError, roomNotFound, offline }, role) {
+  if (online) return { text: `Sincronizado · ${role === 'viewer' ? 'Solo lectura' : 'Editor'}`, icon: 'done' }
+  if (authError) return { text: 'Link no válido', icon: 'danger' }
+  if (roomNotFound) return { text: 'Agenda no encontrada', icon: 'danger' }
+  if (offline) return { text: 'Sin conexión', icon: 'todo' }
+  return { text: 'Conectando…', icon: 'inprogress' }
+}
+
+const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
 
 export function useShare({
   open,
@@ -34,6 +51,8 @@ export function useShare({
   const [error, setError] = useState('')
   const [confirm, setConfirm] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [moreOpen, setMoreOpen] = useState(false)
+  const [joinOpen, setJoinOpen] = useState(false)
   const busyRef = useRef(false)
 
   const runBusy = async (fn) => {
@@ -54,10 +73,7 @@ export function useShare({
     offline: Boolean(currentRoom) && syncStatus === 'offline',
     roomNotFound: syncStatus === 'room-not-found',
   }
-  const status = describeStatus(flags)
-  const statusText = currentRoom
-    ? `Sala ${currentRoom}${currentRole ? ` (${currentRole})` : ''} · ${status.text}`
-    : 'Sin sala activa (solo local)'
+  const status = describeStatus(flags, currentRole)
 
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
   const editToken = tokens?.editToken ?? null
@@ -66,42 +82,14 @@ export function useShare({
   const viewUrl = currentRoom && viewToken ? `${baseUrl}/?room=${currentRoom}&t=${viewToken}&role=viewer` : ''
 
   useEffect(() => {
-    if (!open) setConfirm(null)
+    if (open) return
+    setConfirm(null)
+    setMoreOpen(false)
+    setJoinOpen(false)
   }, [open])
 
-  useEffect(() => {
-    if (!open || !showQr.editor || !editUrl || !canvasEditRef.current) return
-    let cancelled = false
-    import('qrcode').then(({ default: QRCode }) => {
-      if (cancelled || !canvasEditRef.current) return
-      QRCode.toCanvas(canvasEditRef.current, editUrl, {
-        width: 240,
-        margin: 2,
-        errorCorrectionLevel: 'M',
-        color: QR_COLORS,
-      }).catch(() => {})
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [open, showQr.editor, editUrl])
-
-  useEffect(() => {
-    if (!open || !showQr.viewer || !viewUrl || !canvasViewRef.current) return
-    let cancelled = false
-    import('qrcode').then(({ default: QRCode }) => {
-      if (cancelled || !canvasViewRef.current) return
-      QRCode.toCanvas(canvasViewRef.current, viewUrl, {
-        width: 240,
-        margin: 2,
-        errorCorrectionLevel: 'M',
-        color: QR_COLORS,
-      }).catch(() => {})
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [open, showQr.viewer, viewUrl])
+  useQrCanvas(canvasEditRef, editUrl, open && showQr.editor)
+  useQrCanvas(canvasViewRef, viewUrl, open && showQr.viewer)
 
   const toggleQr = (kind) => setShowQr((prev) => ({ ...prev, [kind]: !prev[kind] }))
 
@@ -115,49 +103,26 @@ export function useShare({
           setError(
             result.error === 'no-auth'
               ? 'Autenticación anónima deshabilitada en Firebase Console. Actívala: Authentication → Sign-in method → Anonymous.'
-              : 'No se pudo crear la sala. Verifica tu conexión y vuelve a intentar.',
+              : 'No se pudo activar compartir. Verifica tu conexión y vuelve a intentar.',
           )
         }
       } catch {
-        setError('Error inesperado al crear la sala.')
+        setError('Error inesperado al activar compartir.')
       } finally {
         setCreating(false)
       }
     })
 
-  const handleRenewViewToken = async () => {
-    setRenewing(true)
+  const runTokenAction = async (action, setPending, failMsg, errorMsg) => {
+    setPending(true)
     setError('')
     try {
-      const result = await onRenewViewToken()
-      if (!result?.ok) {
-        setError('No se pudo renovar el link de solo ver. Verifica tu conexión.')
-        return false
-      }
-      return true
+      const result = await action()
+      if (!result?.ok) setError(failMsg)
     } catch {
-      setError('Error inesperado al renovar el link de solo ver.')
-      return false
+      setError(errorMsg)
     } finally {
-      setRenewing(false)
-    }
-  }
-
-  const handleRotateEditToken = async () => {
-    setRotatingEdit(true)
-    setError('')
-    try {
-      const result = await onRotateEditToken()
-      if (!result?.ok) {
-        setError('No se pudo rotar el token de editor. Verifica tu conexión.')
-        return false
-      }
-      return true
-    } catch {
-      setError('Error inesperado al rotar el token de editor.')
-      return false
-    } finally {
-      setRotatingEdit(false)
+      setPending(false)
     }
   }
 
@@ -195,6 +160,17 @@ export function useShare({
     }
   }
 
+  const nativeShare = async (url) => {
+    try {
+      await navigator.share({ title: 'Mi agenda', url })
+    } catch (err) {
+      if (err?.name !== 'AbortError') copyToClipboard(url, 'viewer')
+    }
+  }
+
+  const toggleMore = () => setMoreOpen((prev) => !prev)
+  const toggleJoin = () => setJoinOpen((prev) => !prev)
+
   const askConfirm = (kind) => {
     if (!busyRef.current) setConfirm(kind)
   }
@@ -209,9 +185,19 @@ export function useShare({
       if (kind === 'leave') {
         onLeaveRoom?.()
       } else if (kind === 'renewView') {
-        await handleRenewViewToken()
+        await runTokenAction(
+          onRenewViewToken,
+          setRenewing,
+          'No se pudo renovar el link de solo ver. Verifica tu conexión.',
+          'Error inesperado al renovar el link de solo ver.',
+        )
       } else if (kind === 'rotateEdit') {
-        await handleRotateEditToken()
+        await runTokenAction(
+          onRotateEditToken,
+          setRotatingEdit,
+          'No se pudo renovar el link de edición. Verifica tu conexión.',
+          'Error inesperado al renovar el link de edición.',
+        )
       }
       setConfirm(null)
     })
@@ -228,7 +214,7 @@ export function useShare({
     busy,
     copied,
     error,
-    statusText,
+    statusText: status.text,
     statusIcon: status.icon,
     editUrl,
     viewUrl,
@@ -241,5 +227,11 @@ export function useShare({
     handleCreate,
     join,
     copyToClipboard,
+    canNativeShare,
+    nativeShare,
+    moreOpen,
+    toggleMore,
+    joinOpen,
+    toggleJoin,
   }
 }

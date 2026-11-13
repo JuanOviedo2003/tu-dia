@@ -47,7 +47,7 @@ export default function DayView({ dateStr, tasks, actions, isViewer, isMobile, d
   return (
     <DayBoardDesktop
       capture={capture}
-      progress={dayProgress(dayTasks)}
+      progress={dayProgress(dayTasks, dateStr)}
       columns={groups.map(({ status, tasks: columnTasks }) => (
         <BoardColumn key={status.key} status={status} tasks={columnTasks} actions={actions} isViewer={isViewer} onAdd={(key) => onNewTask({ day: dateStr, status: key })} />
       ))}

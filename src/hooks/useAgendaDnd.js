@@ -22,7 +22,8 @@ function collisionDetection(args) {
     const containers = args.droppableContainers.filter((c) => c.id === 'timeline')
     return pointerWithin({ ...args, droppableContainers: containers })
   }
-  return rectIntersection(args)
+  const underPointer = pointerWithin(args)
+  return underPointer.length > 0 ? underPointer : rectIntersection(args)
 }
 
 function minutesFromDrop(el, translated) {

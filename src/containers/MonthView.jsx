@@ -16,6 +16,7 @@ export default function MonthView({ dateStr, tasks, isMobile, isViewer, onSelect
     dayStr: day.dateStr,
     dayNumber: day.dayNumber,
     dayTasks: byDay.get(day.dateStr) ?? NO_TASKS,
+    today,
     isToday: day.dateStr === today,
     isViewer,
     onSelect: onSelectDay,

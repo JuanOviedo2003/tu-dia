@@ -3,8 +3,8 @@ import { weekdayShort } from '../lib/time'
 import DayRowView from '../components/DayRowView'
 import { Droppable } from './Drag'
 
-export default function DayRow({ dayStr, dayNumber, weekday, dayTasks, isToday, isViewer, onSelect }) {
-  const { progress, tone, label } = useDaySummary(dayStr, dayTasks)
+export default function DayRow({ dayStr, dayNumber, weekday, dayTasks, today, isToday, isViewer, onSelect }) {
+  const { progress, label } = useDaySummary(dayStr, dayTasks, today)
 
   return (
     <Droppable id={`day:${dayStr}`} disabled={isViewer}>
@@ -16,7 +16,6 @@ export default function DayRow({ dayStr, dayNumber, weekday, dayTasks, isToday, 
           isToday={isToday}
           isOver={isOver}
           progress={progress}
-          tone={tone}
           onSelect={() => onSelect(dayStr)}
         />
       )}

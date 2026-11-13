@@ -11,6 +11,7 @@ import { useShortcuts } from './hooks/useShortcuts'
 import { useTaskActions } from './hooks/useTaskActions'
 import { useToast } from './hooks/useToast'
 import AppHeader from './components/AppHeader'
+import BottomNav from './components/BottomNav'
 import ConfirmDialog from './components/ConfirmDialog'
 import MobileMenu from './components/MobileMenu'
 import StatusSheet from './components/StatusSheet'
@@ -75,8 +76,8 @@ export default function App() {
     return (
       <FullScreenMessage
         icon="danger"
-        title="Sala no encontrada"
-        text="Esta sala no existe o fue eliminada. Crea una sala nueva o pide un link actualizado."
+        title="Agenda no encontrada"
+        text="Esta agenda compartida ya no existe. Pide un link actualizado."
         actionLabel="Volver al modo local"
         onAction={backToLocal}
       />
@@ -87,8 +88,8 @@ export default function App() {
     return (
       <FullScreenMessage
         icon="danger"
-        title="Sala privada"
-        text="No tienes acceso a esta sala. Pide al anfitrión un link válido con token."
+        title="Agenda privada"
+        text="No tienes acceso a esta agenda. Pide un link válido."
         actionLabel="Volver al modo local"
         onAction={backToLocal}
       />
@@ -96,10 +97,10 @@ export default function App() {
   }
 
   if (room.state === ROOM_STATES.VALIDATING) {
-    return <FullScreenMessage icon="inprogress" title="Validando acceso…" text="Verificando token de sala." />
+    return <FullScreenMessage icon="inprogress" title="Validando acceso…" text="Verificando el link." />
   }
 
-  const progress = isMobile && view === 'day' ? dayProgress(tasksForDay(api.tasks, nav.selectedDay)) : null
+  const progress = isMobile && view === 'day' ? dayProgress(tasksForDay(api.tasks, nav.selectedDay), nav.selectedDay) : null
 
   return (
     <DndContext {...dndProps}>
@@ -120,7 +121,6 @@ export default function App() {
           nextLabel={nav.nextLabel}
           sync={sync}
           onShare={() => setShareOpen(true)}
-          onMenu={() => setMenuOpen(true)}
         />
 
         <div className={cx('flex min-h-0 flex-1', isMobile ? 'flex-col' : 'flex-wrap overflow-y-auto')}>
@@ -165,6 +165,16 @@ export default function App() {
             )}
           </main>
         </div>
+
+        {isMobile && !activeDrag && (
+          <BottomNav
+            view={view}
+            onViewChange={setView}
+            onAdd={() => (view === 'day' ? setFocusRequest((n) => n + 1) : ui.openNew({ day: nav.selectedDay }))}
+            onMenu={() => setMenuOpen(true)}
+            showAdd={!isViewer}
+          />
+        )}
 
         {isMobile && (
           <Backlog
@@ -212,9 +222,7 @@ export default function App() {
           currentRoom={room.inRoom ? room.code : ''}
           currentRole={room.role}
           tokens={room.tokens}
-          onJoin={(code, token, role) => {
-            requestJoin(code, token, role)
-          }}
+          onJoin={requestJoin}
           onCreateRoom={createNewRoom}
           onRenewViewToken={renewViewToken}
           onRotateEditToken={rotateEditToken}
@@ -227,14 +235,13 @@ export default function App() {
 
         <ConfirmDialog
           open={Boolean(pendingJoin)}
-          title="Unirse a la sala"
+          title="Unirse a la agenda compartida"
           message={
             pendingJoin
               ? `Tienes ${pendingJoin.localCount} ${pendingJoin.localCount === 1 ? 'tarea local' : 'tareas locales'}. ¿Qué hago con ellas?`
               : ''
           }
-          confirmLabel="Usar la agenda de la sala"
-          confirmVariant="primary"
+          confirmLabel="Usar la agenda compartida"
           onConfirm={() => confirmJoin('room')}
           secondaryLabel="Combinar con mis tareas locales"
           onSecondary={() => confirmJoin('merge')}
