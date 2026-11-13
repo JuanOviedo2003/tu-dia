@@ -11,6 +11,7 @@ import { useShortcuts } from './hooks/useShortcuts'
 import { useTaskActions } from './hooks/useTaskActions'
 import { useToast } from './hooks/useToast'
 import AppHeader from './components/AppHeader'
+import ConfirmDialog from './components/ConfirmDialog'
 import MobileMenu from './components/MobileMenu'
 import StatusSheet from './components/StatusSheet'
 import TaskCardView from './components/TaskCardView'
@@ -26,7 +27,8 @@ import TimelineView from './containers/TimelineView'
 const MOBILE_MAX_WIDTH = 599
 
 export default function App() {
-  const { api, room, joinRoom, createNewRoom, rotateRoomTokens, leaveRoom, backToLocal } = useAgenda()
+  const { api, room, requestJoin, pendingJoin, confirmJoin, cancelJoin, createNewRoom, renewViewToken, rotateEditToken, leaveRoom, backToLocal } =
+    useAgenda()
   const isMobile = useIsMobile(MOBILE_MAX_WIDTH)
   const nav = useAgendaNav()
   const toast = useToast()
@@ -209,17 +211,34 @@ export default function App() {
           onClose={closeShare}
           currentRoom={room.inRoom ? room.code : ''}
           currentRole={room.role}
+          tokens={room.tokens}
           onJoin={(code, token, role) => {
-            joinRoom(code, token, role)
-            closeShare()
+            requestJoin(code, token, role)
           }}
           onCreateRoom={createNewRoom}
-          onRotateTokens={rotateRoomTokens}
+          onRenewViewToken={renewViewToken}
+          onRotateEditToken={rotateEditToken}
           onLeaveRoom={() => {
             leaveRoom()
             closeShare()
           }}
           syncStatus={api.syncStatus}
+        />
+
+        <ConfirmDialog
+          open={Boolean(pendingJoin)}
+          title="Unirse a la sala"
+          message={
+            pendingJoin
+              ? `Tienes ${pendingJoin.localCount} ${pendingJoin.localCount === 1 ? 'tarea local' : 'tareas locales'}. ¿Qué hago con ellas?`
+              : ''
+          }
+          confirmLabel="Usar la agenda de la sala"
+          confirmVariant="primary"
+          onConfirm={() => confirmJoin('room')}
+          secondaryLabel="Combinar con mis tareas locales"
+          onSecondary={() => confirmJoin('merge')}
+          onCancel={cancelJoin}
         />
 
         <StatusSheet task={ui.sheet.task} onSetStatus={ui.sheet.setStatus} onEdit={ui.sheet.edit} onClose={ui.sheet.close} />

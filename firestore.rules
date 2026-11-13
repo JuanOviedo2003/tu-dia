@@ -2,6 +2,31 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function isHash(value) {
+      return value is string && value.size() == 64;
+    }
+
+    function roomPath(roomId) {
+      return /databases/$(database)/documents/rooms/$(roomId);
+    }
+
+    function keysPath(roomId) {
+      return /databases/$(database)/documents/roomKeys/$(roomId);
+    }
+
+    function hasClaim(roomId, role, tokenHash) {
+      let claimPath = /databases/$(database)/documents/roomAccess/$(roomId + '_' + request.auth.uid);
+      return isHash(tokenHash)
+        && exists(claimPath)
+        && get(claimPath).data.role == role
+        && get(claimPath).data.proof == tokenHash;
+    }
+
+    function isRoomOwner(roomId) {
+      return exists(roomPath(roomId))
+        && get(roomPath(roomId)).data.ownerUid == request.auth.uid;
+    }
+
     match /roomAccess/{claimId} {
       allow create, update: if request.auth != null
         && request.auth.uid == claimId.split('_')[1]
@@ -16,33 +41,55 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/rooms/$(claimId.split('_')[0])).data.ownerUid == request.auth.uid;
     }
 
-    match /rooms/{roomId} {
+    match /roomKeys/{roomId} {
 
-      function isValidClaim(role, tokenHash) {
-        let uid = request.auth.uid;
-        let claimId = roomId + '_' + uid;
-        let claimPath = /databases/$(database)/documents/roomAccess/$(claimId);
-        return exists(claimPath)
-          && get(claimPath).data.role == role
-          && get(claimPath).data.proof == tokenHash;
+      function hasValidKeys() {
+        return request.resource.data.keys().hasOnly(['editTokenHash', 'viewTokenHash'])
+          && isHash(request.resource.data.get('editTokenHash', null))
+          && isHash(request.resource.data.get('viewTokenHash', null));
       }
 
-      function isHash(value) {
-        return value is string && value.size() == 64;
+      allow read: if false;
+
+      allow create: if request.auth != null
+        && hasValidKeys()
+        && (
+          (existsAfter(roomPath(roomId)) && getAfter(roomPath(roomId)).data.ownerUid == request.auth.uid)
+          || (exists(roomPath(roomId)) && hasClaim(roomId, 'editor', get(roomPath(roomId)).data.get('editTokenHash', null)))
+        );
+
+      allow update: if request.auth != null
+        && hasValidKeys()
+        && (isRoomOwner(roomId) || hasClaim(roomId, 'editor', resource.data.editTokenHash));
+
+      allow delete: if request.auth != null
+        && isRoomOwner(roomId);
+    }
+
+    match /rooms/{roomId} {
+
+      function isValidClaim(role, field) {
+        let keys = keysPath(roomId);
+        return (exists(keys) && hasClaim(roomId, role, get(keys).data.get(field, null)))
+          || (!exists(keys) && hasClaim(roomId, role, resource.data.get(field, null)));
+      }
+
+      function onlyRemoves(changed, field) {
+        return !changed.hasAny([field]) || !request.resource.data.keys().hasAny([field]);
       }
 
       function isValidEditorUpdate() {
         let changed = request.resource.data.diff(resource.data).affectedKeys();
         return !changed.hasAny(['ownerUid'])
-          && (!changed.hasAny(['editTokenHash']) || isHash(request.resource.data.editTokenHash))
-          && (!changed.hasAny(['viewTokenHash']) || isHash(request.resource.data.viewTokenHash));
+          && onlyRemoves(changed, 'editTokenHash')
+          && onlyRemoves(changed, 'viewTokenHash');
       }
 
       allow read: if request.auth != null
         && (
           resource.data.ownerUid == request.auth.uid
-          || isValidClaim('editor', resource.data.editTokenHash)
-          || isValidClaim('viewer', resource.data.viewTokenHash)
+          || isValidClaim('editor', 'editTokenHash')
+          || isValidClaim('viewer', 'viewTokenHash')
         );
 
       allow create: if request.auth != null
@@ -59,7 +106,7 @@ service cloud.firestore {
         && request.resource.data.tombstones.size() <= 600
         && (
           resource.data.ownerUid == request.auth.uid
-          || (isValidClaim('editor', resource.data.editTokenHash) && isValidEditorUpdate())
+          || (isValidClaim('editor', 'editTokenHash') && isValidEditorUpdate())
         );
 
       allow delete: if request.auth != null

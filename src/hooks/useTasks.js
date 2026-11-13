@@ -7,15 +7,17 @@ import { generateRoomTokens, generateToken, sha256Hash } from '../lib/tokens'
 
 const stamp = () => Date.now()
 
-export function useTasks(roomRole) {
+export function useTasks(roomRole, onEditTokenMigrated) {
   const [tasks, setTasks] = useState(loadTasks)
   const [tombstones, setTombstones] = useState(loadTombstones)
   const [syncStatus, setSyncStatus] = useState('offline')
 
   const tasksRef = useRef(tasks)
   const tombRef = useRef(tombstones)
+  const migratedRef = useRef(onEditTokenMigrated)
   tasksRef.current = tasks
   tombRef.current = tombstones
+  migratedRef.current = onEditTokenMigrated
 
   const applyingRemote = useRef(false)
 
@@ -30,6 +32,7 @@ export function useTasks(roomRole) {
           applyingRemote.current = false
         },
         onStatus: (s) => setSyncStatus(s),
+        onEditTokenMigrated: (code, token) => migratedRef.current?.(code, token),
       })
       return s
     },

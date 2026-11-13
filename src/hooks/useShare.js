@@ -10,15 +10,43 @@ function describeStatus({ online, authError, roomNotFound, offline }) {
   return { text: 'conectando...', icon: 'inprogress' }
 }
 
-export function useShare({ open, currentRoom, currentRole, onCreateRoom, onRotateTokens, onJoin, onClose, syncStatus }) {
-  const canvasRef = useRef(null)
+export function useShare({
+  open,
+  currentRoom,
+  currentRole,
+  tokens,
+  onCreateRoom,
+  onRenewViewToken,
+  onRotateEditToken,
+  onLeaveRoom,
+  onJoin,
+  onClose,
+  syncStatus,
+}) {
+  const canvasEditRef = useRef(null)
+  const canvasViewRef = useRef(null)
   const [input, setInput] = useState('')
-  const [qrTab, setQrTab] = useState('editor')
-  const [tokens, setTokens] = useState(null)
+  const [showQr, setShowQr] = useState({ editor: false, viewer: false })
   const [creating, setCreating] = useState(false)
-  const [rotating, setRotating] = useState(false)
+  const [renewing, setRenewing] = useState(false)
+  const [rotatingEdit, setRotatingEdit] = useState(false)
   const [copied, setCopied] = useState('')
   const [error, setError] = useState('')
+  const [confirm, setConfirm] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
+
+  const runBusy = async (fn) => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    try {
+      await fn()
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
+  }
 
   const flags = {
     online: syncStatus === 'online',
@@ -32,20 +60,21 @@ export function useShare({ open, currentRoom, currentRole, onCreateRoom, onRotat
     : 'Sin sala activa (solo local)'
 
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-  const editUrl = tokens ? `${baseUrl}/?room=${currentRoom}&t=${tokens.editToken}&role=editor` : ''
-  const viewUrl = tokens ? `${baseUrl}/?room=${currentRoom}&t=${tokens.viewToken}&role=viewer` : ''
-  const activeUrl = qrTab === 'editor' ? editUrl : viewUrl
+  const editToken = tokens?.editToken ?? null
+  const viewToken = tokens?.viewToken ?? null
+  const editUrl = currentRoom && editToken ? `${baseUrl}/?room=${currentRoom}&t=${editToken}&role=editor` : ''
+  const viewUrl = currentRoom && viewToken ? `${baseUrl}/?room=${currentRoom}&t=${viewToken}&role=viewer` : ''
 
   useEffect(() => {
-    setTokens(null)
-  }, [currentRoom])
+    if (!open) setConfirm(null)
+  }, [open])
 
   useEffect(() => {
-    if (!open || !activeUrl || !canvasRef.current) return
+    if (!open || !showQr.editor || !editUrl || !canvasEditRef.current) return
     let cancelled = false
     import('qrcode').then(({ default: QRCode }) => {
-      if (cancelled || !canvasRef.current) return
-      QRCode.toCanvas(canvasRef.current, activeUrl, {
+      if (cancelled || !canvasEditRef.current) return
+      QRCode.toCanvas(canvasEditRef.current, editUrl, {
         width: 240,
         margin: 2,
         errorCorrectionLevel: 'M',
@@ -55,44 +84,80 @@ export function useShare({ open, currentRoom, currentRole, onCreateRoom, onRotat
     return () => {
       cancelled = true
     }
-  }, [open, activeUrl])
+  }, [open, showQr.editor, editUrl])
 
-  const handleCreate = async () => {
-    setCreating(true)
+  useEffect(() => {
+    if (!open || !showQr.viewer || !viewUrl || !canvasViewRef.current) return
+    let cancelled = false
+    import('qrcode').then(({ default: QRCode }) => {
+      if (cancelled || !canvasViewRef.current) return
+      QRCode.toCanvas(canvasViewRef.current, viewUrl, {
+        width: 240,
+        margin: 2,
+        errorCorrectionLevel: 'M',
+        color: QR_COLORS,
+      }).catch(() => {})
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [open, showQr.viewer, viewUrl])
+
+  const toggleQr = (kind) => setShowQr((prev) => ({ ...prev, [kind]: !prev[kind] }))
+
+  const handleCreate = () =>
+    runBusy(async () => {
+      setCreating(true)
+      setError('')
+      try {
+        const result = await onCreateRoom()
+        if (!result.ok) {
+          setError(
+            result.error === 'no-auth'
+              ? 'Autenticación anónima deshabilitada en Firebase Console. Actívala: Authentication → Sign-in method → Anonymous.'
+              : 'No se pudo crear la sala. Verifica tu conexión y vuelve a intentar.',
+          )
+        }
+      } catch {
+        setError('Error inesperado al crear la sala.')
+      } finally {
+        setCreating(false)
+      }
+    })
+
+  const handleRenewViewToken = async () => {
+    setRenewing(true)
     setError('')
     try {
-      const result = await onCreateRoom()
-      if (!result.ok) {
-        setError(
-          result.error === 'no-auth'
-            ? 'Autenticación anónima deshabilitada en Firebase Console. Actívala: Authentication → Sign-in method → Anonymous.'
-            : 'No se pudo crear la sala. Verifica tu conexión y vuelve a intentar.',
-        )
-        return
+      const result = await onRenewViewToken()
+      if (!result?.ok) {
+        setError('No se pudo renovar el link de solo ver. Verifica tu conexión.')
+        return false
       }
-      setTokens({ editToken: result.editToken, viewToken: result.viewToken })
+      return true
     } catch {
-      setError('Error inesperado al crear la sala.')
+      setError('Error inesperado al renovar el link de solo ver.')
+      return false
     } finally {
-      setCreating(false)
+      setRenewing(false)
     }
   }
 
-  const handleRotate = async () => {
-    if (!currentRoom) return
-    setRotating(true)
+  const handleRotateEditToken = async () => {
+    setRotatingEdit(true)
     setError('')
     try {
-      const result = await onRotateTokens(currentRoom)
-      if (!result.ok) {
-        setError('No se pudieron rotar los tokens. Verifica tu conexión.')
-        return
+      const result = await onRotateEditToken()
+      if (!result?.ok) {
+        setError('No se pudo rotar el token de editor. Verifica tu conexión.')
+        return false
       }
-      setTokens({ editToken: result.editToken, viewToken: result.viewToken })
+      return true
     } catch {
-      setError('Error inesperado al rotar tokens.')
+      setError('Error inesperado al rotar el token de editor.')
+      return false
     } finally {
-      setRotating(false)
+      setRotatingEdit(false)
     }
   }
 
@@ -100,22 +165,24 @@ export function useShare({ open, currentRoom, currentRole, onCreateRoom, onRotat
     const value = input.trim()
     if (!value) return
     setError('')
+    let parsed = null
     try {
       const url = new URL(value)
       const room = url.searchParams.get('room')
       const token = url.searchParams.get('t')
-      const role = url.searchParams.get('role') || 'editor'
-      if (room && token) {
-        await onJoin(room.toUpperCase(), token, role)
-        setInput('')
-        onClose()
-        return
-      }
+      const role = url.searchParams.get('role') === 'viewer' ? 'viewer' : 'editor'
+      if (room && token) parsed = { room, token, role }
     } catch {
       /* no es una URL */
     }
-    setError('Link inválido. Necesita sala y token (?room=CODE&t=TOKEN).')
+    if (!parsed) {
+      setError('Link inválido. Pega el link completo de edición o de solo ver.')
+      setInput('')
+      return
+    }
     setInput('')
+    await onJoin(parsed.room.toUpperCase(), parsed.token, parsed.role)
+    onClose()
   }
 
   const copyToClipboard = async (text, label) => {
@@ -128,24 +195,50 @@ export function useShare({ open, currentRoom, currentRole, onCreateRoom, onRotat
     }
   }
 
+  const askConfirm = (kind) => {
+    if (!busyRef.current) setConfirm(kind)
+  }
+  const cancelConfirm = () => {
+    if (!busyRef.current) setConfirm(null)
+  }
+
+  const runConfirm = () =>
+    runBusy(async () => {
+      const kind = confirm
+      if (!kind) return
+      if (kind === 'leave') {
+        onLeaveRoom?.()
+      } else if (kind === 'renewView') {
+        await handleRenewViewToken()
+      } else if (kind === 'rotateEdit') {
+        await handleRotateEditToken()
+      }
+      setConfirm(null)
+    })
+
   return {
     ...flags,
     input,
     setInput,
-    qrTab,
-    setQrTab,
-    tokens,
+    showQr,
+    toggleQr,
     creating,
-    rotating,
+    renewing,
+    rotatingEdit,
+    busy,
     copied,
     error,
     statusText,
     statusIcon: status.icon,
     editUrl,
     viewUrl,
-    canvasRef,
+    canvasEditRef,
+    canvasViewRef,
+    confirm,
+    askConfirm,
+    cancelConfirm,
+    runConfirm,
     handleCreate,
-    handleRotate,
     join,
     copyToClipboard,
   }

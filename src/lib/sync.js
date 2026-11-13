@@ -1,7 +1,7 @@
-import { doc, onSnapshot, runTransaction, setDoc } from 'firebase/firestore'
+import { deleteField, doc, onSnapshot, runTransaction, setDoc, writeBatch } from 'firebase/firestore'
 import { db, auth, authReady } from './firebase'
 import { reconcile } from './syncMerge'
-import { sha256Hash } from './tokens'
+import { generateToken, sha256Hash } from './tokens'
 
 const PUSH_DEBOUNCE = 150
 const MAX_RETRIES = 3
@@ -9,7 +9,7 @@ const BASE_BACKOFF_MS = 1000
 
 // Cliente de sync: Firestore como estado autoritativo por room.
 // Acceso basado en tokens SHA-256 verificados por reglas.
-export function createSync({ getState, onState, onStatus }) {
+export function createSync({ getState, onState, onStatus, onEditTokenMigrated }) {
   let roomId = null
   let token = null
   let role = null
@@ -20,6 +20,7 @@ export function createSync({ getState, onState, onStatus }) {
   let claimReady = false
   let retryCount = 0
   let retryTimer = null
+  let session = 0
 
   function setStatus(s) {
     connected = s === 'online'
@@ -64,9 +65,11 @@ export function createSync({ getState, onState, onStatus }) {
 
   function subscribeRaw() {
     if (!docRef) return
+    const s = session
     unsub = onSnapshot(
       docRef,
       (snap) => {
+        if (s !== session) return
         retryCount = 0
         setStatus('online')
         if (!snap.exists()) return
@@ -79,7 +82,7 @@ export function createSync({ getState, onState, onStatus }) {
         onState(next)
       },
       (err) => {
-        handleError(err)
+        if (s === session) handleError(err)
       },
     )
   }
@@ -106,6 +109,7 @@ export function createSync({ getState, onState, onStatus }) {
     if (pushTimer) clearTimeout(pushTimer)
     pushTimer = setTimeout(() => {
       pushTimer = null
+      const s = session
       const { tasks, tombstones } = getState()
       runTransaction(db, async (tx) => {
         const snap = await tx.get(docRef)
@@ -120,6 +124,7 @@ export function createSync({ getState, onState, onStatus }) {
         }
         tx.set(docRef, { ...cur, ...patch })
       }).catch((err) => {
+        if (s !== session) return
         const mapped = mapError(err)
         if (mapped === 'auth-error' || mapped === 'room-not-found') {
           setStatus(mapped)
@@ -136,6 +141,7 @@ export function createSync({ getState, onState, onStatus }) {
   }
 
   function teardown() {
+    session++
     if (pushTimer) clearTimeout(pushTimer)
     pushTimer = null
     if (retryTimer) clearTimeout(retryTimer)
@@ -155,15 +161,15 @@ export function createSync({ getState, onState, onStatus }) {
     await authReady
     const user = auth.currentUser
     if (!user) return { ok: false, error: 'no-auth' }
-    const roomRef = doc(db, 'rooms', roomCode)
     try {
-      await setDoc(roomRef, {
+      const batch = writeBatch(db)
+      batch.set(doc(db, 'rooms', roomCode), {
         ownerUid: user.uid,
-        editTokenHash,
-        viewTokenHash,
         tasks: initialTasks || [],
         tombstones: initialTombstones || {},
       })
+      batch.set(doc(db, 'roomKeys', roomCode), { editTokenHash, viewTokenHash })
+      await batch.commit()
       return { ok: true }
     } catch (err) {
       console.error('[sync] createRoom failed:', err?.code || err)
@@ -171,15 +177,13 @@ export function createSync({ getState, onState, onStatus }) {
     }
   }
 
-  async function updateRoomField(roomCode, field, value) {
+  async function updateRoomKey(roomCode, field, value) {
     await authReady
     if (!auth.currentUser) return { ok: false, error: 'no-auth' }
-    const roomRef = doc(db, 'rooms', roomCode)
+    const keysRef = doc(db, 'roomKeys', roomCode)
     try {
       await runTransaction(db, async (tx) => {
-        const snap = await tx.get(roomRef)
-        if (!snap.exists()) throw Object.assign(new Error('Sala no existe'), { code: 'not-found' })
-        tx.update(roomRef, { [field]: value })
+        tx.update(keysRef, { [field]: value })
       })
       return { ok: true }
     } catch (err) {
@@ -188,35 +192,72 @@ export function createSync({ getState, onState, onStatus }) {
     }
   }
 
+  async function migrateLegacyRoom(id) {
+    const roomRef = doc(db, 'rooms', id)
+    const newToken = generateToken()
+    try {
+      const migrated = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(roomRef)
+        const legacy = snap.exists() ? snap.data() : {}
+        if (typeof legacy.editTokenHash !== 'string') return false
+        const viewTokenHash = typeof legacy.viewTokenHash === 'string' && legacy.viewTokenHash.length === 64
+          ? legacy.viewTokenHash
+          : sha256Hash(generateToken())
+        tx.set(doc(db, 'roomKeys', id), { editTokenHash: sha256Hash(newToken), viewTokenHash })
+        tx.update(roomRef, { editTokenHash: deleteField(), viewTokenHash: deleteField() })
+        return true
+      })
+      return migrated ? newToken : null
+    } catch (err) {
+      console.error('[sync] migrateLegacyRoom failed:', err?.code || err)
+      return null
+    }
+  }
+
   function renewViewToken(roomCode, newViewHash) {
-    return updateRoomField(roomCode, 'viewTokenHash', newViewHash)
+    return updateRoomKey(roomCode, 'viewTokenHash', newViewHash)
   }
 
   async function rotateEditToken(roomCode, newEditHash, newEditToken) {
     const prev = { token, role }
     teardown()
-    const result = await updateRoomField(roomCode, 'editTokenHash', newEditHash)
+    const result = await updateRoomKey(roomCode, 'editTokenHash', newEditHash)
     if (result.ok) await start(roomCode, newEditToken, 'editor')
     else await start(roomCode, prev.token, prev.role)
     push()
     return result
   }
 
+  async function claimOrFail(id, claimToken, claimRole, s) {
+    const result = await createClaim(id, claimToken, claimRole)
+    if (s !== session) return false
+    if (!result.ok) setStatus(result.error === 'permission-denied' ? 'auth-error' : 'offline')
+    return result.ok
+  }
+
   async function start(id, nextToken, nextRole) {
     teardown()
+    const s = session
     roomId = id
     token = nextToken
     role = nextRole
+    setStatus('connecting')
     if (nextToken) {
       const user = await authReady
+      if (s !== session) return
       if (!user) {
-        onStatus?.('auth-error')
+        setStatus('auth-error')
         return
       }
-      const result = await createClaim(id, nextToken, nextRole)
-      if (!result.ok) {
-        onStatus?.('auth-error')
-        return
+      if (!(await claimOrFail(id, nextToken, nextRole, s))) return
+      if (nextRole === 'editor') {
+        const migratedToken = await migrateLegacyRoom(id)
+        if (migratedToken) onEditTokenMigrated?.(id, migratedToken)
+        if (s !== session) return
+        if (migratedToken) {
+          token = migratedToken
+          if (!(await claimOrFail(id, migratedToken, 'editor', s))) return
+        }
       }
     }
     claimReady = true

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTasks } from './useTasks'
 import {
   saveRoomCode,
@@ -50,19 +50,25 @@ export function useAgenda() {
   const [tokens, setTokens] = useState(NO_TOKENS)
   const [pendingJoin, setPendingJoin] = useState(null)
 
-  const api = useTasks(roomRole)
+  const pendingCreds = useRef(null)
+
+  const handleEditTokenMigrated = (code, editToken) => {
+    if (pendingCreds.current?.code === code) pendingCreds.current = { ...pendingCreds.current, token: editToken }
+    else if (loadRoomCode() === code) saveToken(editToken)
+    else return
+    setTokens((prev) => ({ ...prev, editToken }))
+  }
+
+  const api = useTasks(roomRole, handleEditTokenMigrated)
   const { syncStatus, initSync, createRoom, renewViewToken: renewView, rotateEditToken: rotateEdit, stop } = api
   const localCount = api.tasks.length
 
   const joinRoom = (code, token, role, discardLocal = false) => {
+    pendingCreds.current = { code, token, role }
     setRoomCode(code)
     setRoomState(ROOM_STATES.VALIDATING)
-    saveRoomCode(code)
-    saveToken(token)
-    saveRole(role)
-    saveViewToken(null)
     setRoomRole(role)
-    setTokens(readTokens(role))
+    setTokens(role === 'viewer' ? { editToken: null, viewToken: token } : { editToken: token, viewToken: null })
     initSync(code, token, role, discardLocal)
   }
 
@@ -118,21 +124,27 @@ export function useAgenda() {
 
   useEffect(() => {
     if (syncStatus === 'online' && roomState === ROOM_STATES.VALIDATING) {
+      const creds = pendingCreds.current
+      if (creds) {
+        pendingCreds.current = null
+        saveRoomCode(creds.code)
+        saveToken(creds.token)
+        saveRole(creds.role)
+        saveViewToken(null)
+      }
       setRoomState(roomRole === 'viewer' ? ROOM_STATES.VIEWER : ROOM_STATES.EDITOR)
-    } else if (syncStatus === 'auth-error') {
-      setRoomState(ROOM_STATES.DENIED)
+    } else if (syncStatus === 'auth-error' || syncStatus === 'room-not-found') {
+      setRoomState(syncStatus === 'auth-error' ? ROOM_STATES.DENIED : ROOM_STATES.NOT_FOUND)
       setTokens(NO_TOKENS)
-      clearRoomCredentials()
-    } else if (syncStatus === 'room-not-found') {
-      setRoomState(ROOM_STATES.NOT_FOUND)
-      setTokens(NO_TOKENS)
-      clearRoomCredentials()
+      if (pendingCreds.current) pendingCreds.current = null
+      else clearRoomCredentials()
     }
   }, [syncStatus, roomState, roomRole])
 
   const createNewRoom = async () => {
     const result = await createRoom()
     if (result.ok) {
+      pendingCreds.current = null
       setPendingJoin(null)
       setRoomCode(result.roomCode)
       setRoomState(ROOM_STATES.EDITOR)
@@ -170,6 +182,7 @@ export function useAgenda() {
   }
 
   const resetToLocal = () => {
+    pendingCreds.current = null
     setRoomCode('')
     setRoomRole('')
     setTokens(NO_TOKENS)
@@ -195,7 +208,6 @@ export function useAgenda() {
       isViewer: roomRole === 'viewer',
       tokens,
     },
-    joinRoom,
     requestJoin,
     pendingJoin,
     confirmJoin,
