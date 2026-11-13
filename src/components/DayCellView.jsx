@@ -14,7 +14,9 @@ export default function DayCellView({ dayNumber, label, isToday, isOver, progres
             ? 'border-accent bg-accent-subtle'
             : tone === 'danger'
               ? 'border-danger bg-danger-bg hover:bg-danger-border'
-              : 'border-line bg-s1 hover:bg-s3',
+              : progress.total === 0
+                ? 'border-line bg-app hover:bg-s3'
+                : 'border-line bg-s1 hover:bg-s3',
       )}
     >
       <button
@@ -30,7 +32,7 @@ export default function DayCellView({ dayNumber, label, isToday, isOver, progres
           {isToday && ' · Hoy'}
           <DayDot tone={tone} />
         </span>
-        <ProgressBar percent={progress.percent} tone={tone} className="w-full" />
+        {progress.total > 0 && <ProgressBar percent={progress.percent} tone={tone} className="w-full" />}
         <DayBadge tone={tone} done={progress.done} total={progress.total} className="max-w-full self-start text-caption" />
       </button>
     </div>

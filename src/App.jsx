@@ -1,4 +1,4 @@
-﻿import { useEffect, useRef, useState } from 'react'
+﻿import { Suspense, lazy, useEffect, useRef, useState } from 'react'
 import { DndContext, DragOverlay } from '@dnd-kit/core'
 import { dayProgress, tasksForDay, unscheduledTasks } from './lib/agenda'
 import { cx } from './lib/cx'
@@ -20,14 +20,23 @@ import FullScreenMessage from './components/ui/FullScreenMessage'
 import Toast from './components/ui/Toast'
 import Backlog from './containers/Backlog'
 import DayView from './containers/DayView'
-import MonthView from './containers/MonthView'
-import ShareModal from './containers/ShareModal'
 import TaskFormModal from './containers/TaskFormModal'
-import TimelineView from './containers/TimelineView'
+const loadMonthView = () => import('./containers/MonthView')
+const loadShareModal = () => import('./containers/ShareModal')
+const loadTimelineView = () => import('./containers/TimelineView')
+const MonthView = lazy(loadMonthView)
+const ShareModal = lazy(loadShareModal)
+const TimelineView = lazy(loadTimelineView)
+
+const preloadLazyViews = () => {
+  const idle = window.requestIdleCallback || ((fn) => setTimeout(fn, 2000))
+  idle(() => [loadMonthView, loadTimelineView, loadShareModal].forEach((load) => load().catch(() => undefined)))
+}
 
 const MOBILE_MAX_WIDTH = 599
 
 export default function App() {
+  useEffect(preloadLazyViews, [])
   const { api, room, requestJoin, pendingJoin, confirmJoin, cancelJoin, createNewRoom, renewViewToken, rotateEditToken, leaveRoom, backToLocal } =
     useAgenda()
   const isMobile = useIsMobile(MOBILE_MAX_WIDTH)
@@ -144,23 +153,27 @@ export default function App() {
               />
             )}
             {view === 'timeline' && (
-              <TimelineView
-                dateStr={nav.selectedDay}
-                tasks={api.tasks}
-                actions={ui.actions}
-                isViewer={isViewer}
-                timelineRef={timelineRef}
-              />
+              <Suspense fallback={null}>
+                <TimelineView
+                  dateStr={nav.selectedDay}
+                  tasks={api.tasks}
+                  actions={ui.actions}
+                  isViewer={isViewer}
+                  timelineRef={timelineRef}
+                />
+              </Suspense>
             )}
             {view === 'month' && (
               <div className="min-h-0 flex-1 overflow-y-auto p-4 md:px-5">
-                <MonthView
-                  dateStr={nav.selectedDay}
-                  tasks={api.tasks}
-                  isMobile={isMobile}
-                  isViewer={isViewer}
-                  onSelectDay={nav.selectDay}
-                />
+                <Suspense fallback={null}>
+                  <MonthView
+                    dateStr={nav.selectedDay}
+                    tasks={api.tasks}
+                    isMobile={isMobile}
+                    isViewer={isViewer}
+                    onSelectDay={nav.selectDay}
+                  />
+                </Suspense>
               </div>
             )}
           </main>
@@ -216,22 +229,26 @@ export default function App() {
           onClose={ui.closeModal}
         />
 
-        <ShareModal
-          open={shareOpen}
-          onClose={closeShare}
-          currentRoom={room.inRoom ? room.code : ''}
-          currentRole={room.role}
-          tokens={room.tokens}
-          onJoin={requestJoin}
-          onCreateRoom={createNewRoom}
-          onRenewViewToken={renewViewToken}
-          onRotateEditToken={rotateEditToken}
-          onLeaveRoom={() => {
-            leaveRoom()
-            closeShare()
-          }}
-          syncStatus={api.syncStatus}
-        />
+        {shareOpen && (
+          <Suspense fallback={null}>
+            <ShareModal
+              open={shareOpen}
+              onClose={closeShare}
+              currentRoom={room.inRoom ? room.code : ''}
+              currentRole={room.role}
+              tokens={room.tokens}
+              onJoin={requestJoin}
+              onCreateRoom={createNewRoom}
+              onRenewViewToken={renewViewToken}
+              onRotateEditToken={rotateEditToken}
+              onLeaveRoom={() => {
+                leaveRoom()
+                closeShare()
+              }}
+              syncStatus={api.syncStatus}
+            />
+          </Suspense>
+        )}
 
         <ConfirmDialog
           open={Boolean(pendingJoin)}

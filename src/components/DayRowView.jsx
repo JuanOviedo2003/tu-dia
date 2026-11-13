@@ -33,7 +33,7 @@ export default function DayRowView({ weekdayLabel, dayNumber, label, isToday, is
         </span>
       </span>
       <span className="flex min-w-0 flex-1 flex-col gap-1.5">
-        <ProgressBar percent={progress.percent} tone={tone} className="w-full" />
+        {progress.total > 0 && <ProgressBar percent={progress.percent} tone={tone} className="w-full" />}
         <DayBadge tone={tone} done={progress.done} total={progress.total} className="self-start text-small" />
       </span>
     </button>

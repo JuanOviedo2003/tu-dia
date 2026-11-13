@@ -6,7 +6,7 @@ const CHIP = {
   todo: 'bg-todo-bg text-todo',
   doing: 'bg-doing-bg text-doing',
   done: 'bg-done-bg text-done',
-  danger: 'bg-danger text-on-accent',
+  danger: 'border border-danger-border bg-danger-bg text-danger',
 }
 
 export function DayDot({ tone, className }) {

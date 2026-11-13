@@ -49,9 +49,9 @@ export function assignLanes(dayTasks) {
 function dayTone(dayTasks, dayStr, today = todayStr()) {
   if (dayTasks.length === 0) return null
   if (dayTasks.every((t) => t.status === 'done')) return 'done'
-  if (dayStr < today) return 'danger'
-  if (dayTasks.every((t) => t.status === 'todo')) return 'todo'
-  return 'doing'
+  const anyDone = dayTasks.some((t) => t.status === 'done')
+  if (dayStr < today) return anyDone ? 'doing' : 'danger'
+  return dayTasks.every((t) => t.status === 'todo') ? 'todo' : 'doing'
 }
 
 export function dayProgress(dayTasks, dayStr, today = todayStr()) {
@@ -67,8 +67,8 @@ export function dayProgress(dayTasks, dayStr, today = todayStr()) {
 
 export function dayStatusText({ done, total, tone }) {
   if (total === 0) return 'Sin tareas'
-  if (tone === 'danger') return `${total - done} sin hacer`
   if (tone === 'done') return 'Todo hecho'
+  if (done === 0) return `${total} ${total === 1 ? 'pendiente' : 'pendientes'}`
   return `${done} ${done === 1 ? 'hecha' : 'hechas'} de ${total}`
 }
 
