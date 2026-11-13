@@ -1,2 +1,8 @@
 @import "tailwindcss";
 @import "./styles/base.css";
+
+@utility transition-ui {
+  transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+  transition-duration: var(--dur-fast);
+  transition-timing-function: var(--ease-out);
+}

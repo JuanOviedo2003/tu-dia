@@ -3,13 +3,13 @@ import { loadTasks, saveTasks, loadTombstones, saveTombstones } from '../lib/sto
 import { uid } from '../lib/constants'
 import { createSync } from '../lib/sync'
 import { generateRecurring, nextOccurrence } from '../lib/recurring'
-import { generateRoomTokens } from '../lib/tokens'
+import { generateRoomTokens, generateToken, sha256Hash } from '../lib/tokens'
 
 const stamp = () => Date.now()
 
 export function useTasks(roomRole) {
-  const [tasks, setTasks] = useState([])
-  const [tombstones, setTombstones] = useState({})
+  const [tasks, setTasks] = useState(loadTasks)
+  const [tombstones, setTombstones] = useState(loadTombstones)
   const [syncStatus, setSyncStatus] = useState('offline')
 
   const tasksRef = useRef(tasks)
@@ -243,7 +243,18 @@ export function useTasks(roomRole) {
     }
   }, [])
 
-  const initSync = useCallback((roomId, token, role) => sync.start(roomId, token, role), [sync])
+  const initSync = useCallback(
+    (roomId, token, role, discardLocal = false) => {
+      if (discardLocal) {
+        tasksRef.current = []
+        tombRef.current = {}
+        setTasks([])
+        setTombstones({})
+      }
+      return sync.start(roomId, token, role)
+    },
+    [sync],
+  )
 
   // Crea sala nueva: genera código + tokens, crea doc en Firestore
   // con el snapshot completo de tareas y tombstones locales.
@@ -255,12 +266,18 @@ export function useTasks(roomRole) {
     return { ok: true, roomCode, editToken: tokens.editToken, viewToken: tokens.viewToken }
   }, [sync, tasks, tombstones])
 
-  // Rota tokens de una sala (solo owner).
-  const rotateTokensSync = useCallback(async (roomCode) => {
-    const tokens = await generateRoomTokens()
-    const result = await sync.rotateTokens(roomCode, tokens.editTokenHash, tokens.viewTokenHash)
+  const renewViewTokenSync = useCallback(async (roomCode) => {
+    const viewToken = generateToken()
+    const result = await sync.renewViewToken(roomCode, sha256Hash(viewToken))
     if (!result.ok) return { ok: false, error: result.error }
-    return { ok: true, editToken: tokens.editToken, viewToken: tokens.viewToken }
+    return { ok: true, viewToken }
+  }, [sync])
+
+  const rotateEditTokenSync = useCallback(async (roomCode) => {
+    const editToken = generateToken()
+    const result = await sync.rotateEditToken(roomCode, sha256Hash(editToken), editToken)
+    if (!result.ok) return { ok: false, error: result.error }
+    return { ok: true, editToken }
   }, [sync])
 
   return {
@@ -278,7 +295,8 @@ export function useTasks(roomRole) {
     updateRecurringRule,
     initSync,
     createRoom: createRoomSync,
-    rotateTokens: rotateTokensSync,
+    renewViewToken: renewViewTokenSync,
+    rotateEditToken: rotateEditTokenSync,
     stop: sync.stop,
   }
 }

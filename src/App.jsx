@@ -1,547 +1,243 @@
 ﻿import { useEffect, useRef, useState } from 'react'
-import {
-  DndContext,
-  DragOverlay,
-  PointerSensor,
-  KeyboardSensor,
-  pointerWithin,
-  rectIntersection,
-  useSensor,
-  useSensors,
-  MeasuringStrategy,
-} from '@dnd-kit/core'
-import { MINUTES_PER_DAY, statusMeta } from './lib/constants'
+import { DndContext, DragOverlay } from '@dnd-kit/core'
+import { dayProgress, tasksForDay, unscheduledTasks } from './lib/agenda'
+import { cx } from './lib/cx'
 import { minutesToLabel } from './lib/time'
-import { useTasks } from './hooks/useTasks'
-import {
-  todayStr,
-  saveRoomCode,
-  loadRoomCode,
-  saveToken,
-  loadToken,
-  saveRole,
-  loadRole,
-} from './lib/storage'
-import Toolbar from './components/Toolbar'
-import Sidebar from './components/Sidebar'
-import Calendar from './components/Calendar'
-import DayBoard from './components/DayBoard'
-import TaskModal from './components/TaskModal'
-import QuickAddBar from './components/QuickAddBar'
-import SyncModal from './components/SyncModal'
+import { useIsMobile } from './hooks/useMediaQuery'
+import { ROOM_STATES, useAgenda } from './hooks/useAgenda'
+import { useAgendaDnd } from './hooks/useAgendaDnd'
+import { useAgendaNav } from './hooks/useAgendaNav'
+import { useShortcuts } from './hooks/useShortcuts'
+import { useTaskActions } from './hooks/useTaskActions'
+import { useToast } from './hooks/useToast'
+import AppHeader from './components/AppHeader'
+import MobileMenu from './components/MobileMenu'
+import StatusSheet from './components/StatusSheet'
+import TaskCardView from './components/TaskCardView'
+import FullScreenMessage from './components/ui/FullScreenMessage'
+import Toast from './components/ui/Toast'
+import Backlog from './containers/Backlog'
+import DayView from './containers/DayView'
+import MonthView from './containers/MonthView'
+import ShareModal from './containers/ShareModal'
+import TaskFormModal from './containers/TaskFormModal'
+import TimelineView from './containers/TimelineView'
 
-// Estados de sala: idle (local), validating, denied, not-found, editor, viewer
-const ROOM_STATES = { IDLE: 'idle', VALIDATING: 'validating', DENIED: 'denied', NOT_FOUND: 'not-found', EDITOR: 'editor', VIEWER: 'viewer' }
+const MOBILE_MAX_WIDTH = 599
 
 export default function App() {
-  // ── Room state machine ────────────────────────────────────────────────
-  const [roomState, setRoomState] = useState(ROOM_STATES.IDLE)
-  const [roomCode, setRoomCode] = useState('')
-  const [roomRole, setRoomRole] = useState('') // 'editor' | 'viewer'
+  const { api, room, joinRoom, createNewRoom, rotateRoomTokens, leaveRoom, backToLocal } = useAgenda()
+  const isMobile = useIsMobile(MOBILE_MAX_WIDTH)
+  const nav = useAgendaNav()
+  const toast = useToast()
+  const isViewer = room.isViewer
+  const ui = useTaskActions({ api, isViewer, isMobile, selectedDay: nav.selectedDay, toast })
+  const { activeDrag, timelineRef, dndProps } = useAgendaDnd({
+    isViewer,
+    selectedDay: nav.selectedDay,
+    scheduleOnDrop: nav.view !== 'month',
+    api,
+  })
 
-  const {
-    tasks,
-    syncStatus,
-    addTask,
-    updateTask,
-    removeTask,
-    moveTaskDay,
-    setStatus,
-    setStartTime,
-    replaceTasks,
-    addRecurringTasks,
-    removeAllInGroup,
-    updateRecurringRule,
-    initSync,
-    createRoom,
-    rotateTokens,
-  } = useTasks(roomRole)
+  const [shareOpen, setShareOpen] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [backlogOpen, setBacklogOpen] = useState(false)
+  const [focusRequest, setFocusRequest] = useState(0)
+  const quickAddRef = useRef(null)
 
-  const now = new Date()
-  const [year, setYear] = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth())
+  const { view, setView } = nav
 
-  const [selectedDay, setSelectedDay] = useState(null)
-  const [modal, setModal] = useState({ open: false, initial: null, defaultDay: null })
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [syncOpen, setSyncOpen] = useState(false)
-  const [quickAddOpen, setQuickAddOpen] = useState(false)
-  const [toast, setToast] = useState(null) // { label, onUndo } captura rápida
-  // Clon visual del arrastre (DragOverlay). La apariencia cambia según la
-  // vista de origen: barra fina (calendario), tarjeta (kanban/backlog).
-  // Timeline mueve su propio bloque (re-tiempo) -> sin overlay.
-  const [activeDrag, setActiveDrag] = useState(null) // { id, task }
-  const timelineRef = useRef(null)
-
-  // Persistencia y URL: URL tiene prioridad sobre storage; un solo efecto de entrada.
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const urlRoom = params.get('room')
-    const urlToken = params.get('t')
-    const urlRole = params.get('role')
-
-    if (urlRoom && urlToken) {
-      // URL trae sala y token: prioridad absoluta
-      const code = urlRoom.toUpperCase().replace(/-V$/, '')
-      setRoomCode(code)
-      setRoomState(ROOM_STATES.VALIDATING)
-      const role = urlRole || 'editor'
-      setRoomRole(role)
-      saveRole(role)
-      initSync(code, urlToken, role)
-      // Limpiar URL después de resolver
-      const url = new URL(window.location.href)
-      url.searchParams.delete('room')
-      url.searchParams.delete('t')
-      url.searchParams.delete('role')
-      window.history.replaceState({}, '', url.toString())
-    } else if (urlRoom) {
-      // Legacy: ?room=CODE sin token → denegar
-      setRoomCode(urlRoom.toUpperCase().replace(/-V$/, ''))
-      setRoomState(ROOM_STATES.DENIED)
-    } else {
-      // Sin URL: intentar restaurar desde storage, pero solo si hay credenciales completas
-      const storedRoomCode = loadRoomCode()
-      const storedToken = loadToken()
-      const storedRole = loadRole()
-
-      if (storedRoomCode && storedToken) {
-        setRoomCode(storedRoomCode)
-        setRoomState(ROOM_STATES.VALIDATING)
-        initSync(storedRoomCode, storedToken, storedRole || 'editor')
-        // Limpiar params de URL por si vienen de antes (ahora que usamos storage)
-        const url = new URL(window.location.href)
-        url.searchParams.delete('room')
-        url.searchParams.delete('t')
-        url.searchParams.delete('role')
-        window.history.replaceState({}, '', url.toString())
-      } else {
-        // Sin credenciales ni URL: mantener modo local (roomState IDLE)
-        setRoomCode('')
-        setRoomState(ROOM_STATES.IDLE)
-      }
+    if (focusRequest && view === 'day') {
+      quickAddRef.current?.focus()
+      setFocusRequest(0)
     }
-  }, [initSync])
+  }, [focusRequest, view])
 
-  // Observar syncStatus para determinar estado de sala
-  useEffect(() => {
-    if (syncStatus === 'online' && roomState === ROOM_STATES.VALIDATING) {
-      setRoomState(roomRole === 'viewer' ? ROOM_STATES.VIEWER : ROOM_STATES.EDITOR)
-    } else if (syncStatus === 'auth-error') {
-      setRoomState(ROOM_STATES.DENIED)
-      // Limpiar credenciales inválidas al entrar en DENIED
-      saveRoomCode(null)
-      saveToken(null)
-      saveRole(null)
-    } else if (syncStatus === 'room-not-found') {
-      setRoomState(ROOM_STATES.NOT_FOUND)
-      // Limpiar credenciales inválidas al entrar en NOT_FOUND
-      saveRoomCode(null)
-      saveToken(null)
-      saveRole(null)
-    }
-  }, [syncStatus, roomState, roomRole, saveRoomCode, saveToken, saveRole])
+  useShortcuts({
+    enabled: !activeDrag,
+    onNew: () => {
+      if (isViewer) return
+      setView('day')
+      setFocusRequest((n) => n + 1)
+    },
+    onPrev: nav.goPrev,
+    onNext: nav.goNext,
+    onToday: nav.goToday,
+  })
 
-  const isViewer = roomRole === 'viewer'
-  const inRoom = roomState === ROOM_STATES.EDITOR || roomState === ROOM_STATES.VIEWER
+  const closeShare = () => setShareOpen(false)
+  const sync = { status: api.syncStatus, room: room.inRoom ? room.code : '', role: room.role }
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor),
-  )
-
-  const openDay = (dateStr) => setSelectedDay(dateStr)
-  const openNew = (defaultDay = null) => setModal({ open: true, initial: null, defaultDay, groupCount: 0 })
-  const openEdit = (task) => {
-    if (isViewer) return
-    setModal({
-      open: true,
-      initial: task,
-      defaultDay: task.day,
-      groupCount: task.groupId ? tasks.filter((t) => t.groupId === task.groupId).length : 0,
-    })
-  }
-  const closeModal = () => setModal({ open: false, initial: null, defaultDay: null, groupCount: 0 })
-
-  const handleSave = (data) => {
-    if (isViewer) return
-    if (modal.initial) updateTask(modal.initial.id, data)
-    else addTask(data)
-    closeModal()
-  }
-
-  const handleSaveRecurring = (data, opts) => {
-    if (isViewer) return
-    addRecurringTasks(data, opts)
-    closeModal()
-  }
-
-  const handleDelete = (id) => {
-    if (isViewer) return
-    removeTask(id)
-    closeModal()
-  }
-
-  const handleDeleteSeries = (groupId) => {
-    removeAllInGroup(groupId)
-    closeModal()
-  }
-
-  // ── Captura rápida (Quick-add): Ctrl+K, botón toolbar, FAB móvil ──────
-  useEffect(() => {
-    const onKey = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
-        e.preventDefault()
-        setQuickAddOpen((v) => {
-          if (v) return false
-          return !isViewer && !selectedDay
-        })
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [isViewer, selectedDay])
-
-  // Toast con deshacer: auto-cierre a los 5s.
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(null), 5000)
-    return () => clearTimeout(t)
-  }, [toast])
-
-  const handleQuickCreate = (data, repeatOpts) => {
-    if (isViewer) return
-    if (repeatOpts) {
-      const created = addRecurringTasks(data, repeatOpts)
-      if (created.length > 0) {
-        const groupId = created[0].groupId
-        setToast({
-          label: `Serie creada (${created.length} tareas)`,
-          onUndo: () => removeAllInGroup(groupId),
-        })
-      }
-    } else {
-      const task = addTask(data)
-      setToast({
-        label: data.day ? 'Tarea creada' : 'Tarea creada en Sin programar',
-        onUndo: () => removeTask(task.id),
-      })
-    }
-  }
-
-  const changeMonth = (delta) => {
-    let m = month + delta
-    let y = year
-    if (m < 0) { m = 11; y-- }
-    if (m > 11) { m = 0; y++ }
-    setMonth(m)
-    setYear(y)
-  }
-
-  const goToday = () => {
-    const d = new Date()
-    setYear(d.getFullYear())
-    setMonth(d.getMonth())
-  }
-
-const joinRoom = (code, token, role) => {
-  setRoomCode(code)
-  setRoomState(ROOM_STATES.VALIDATING)
-  saveRoomCode(code)
-  saveToken(token)
-  saveRole(role)
-  setRoomRole(role)
-  initSync(code, token, role)
-  setSyncOpen(false)
-}
-
-  const createNewRoom = async () => {
-    const result = await createRoom()
-    if (result.ok) {
-      setRoomCode(result.roomCode)
-      setRoomState(ROOM_STATES.EDITOR)
-      saveRoomCode(result.roomCode)
-      saveToken(result.editToken)
-      saveRole('editor')
-      setRoomRole('editor')
-      initSync(result.roomCode, result.editToken, 'editor')
-    }
-    return result
-  }
-
-  const handleRotateTokens = async () => {
-    if (!roomCode) return
-    return await rotateTokens(roomCode)
-  }
-
-  const leaveRoom = () => {
-    stop()
-    saveRoomCode(null)
-    saveToken(null)
-    saveRole(null)
-    setRoomCode('')
-    setRoomState(ROOM_STATES.IDLE)
-    setRoomRole('')
-    setSyncOpen(false)
-  }
-
-  const handleDragStart = (event) => {
-    if (isViewer) return
-    const task = event.active.data.current?.task ?? null
-    if (task) setActiveDrag({ id: String(event.active.id), task })
-  }
-
-  const handleDragEnd = (event) => {
-    if (isViewer) {
-      setActiveDrag(null)
-      return
-    }
-    const { active, over } = event
-    const fromTimeline = active.data.current?.from === 'timeline'
-    setActiveDrag(null)
-    if (!over) return
-    const task = active.data.current?.task
-    if (!task) return
-    const overId = String(over.id)
-    // Timeline solo re-tiempo: no permitir soltar bloque sobre kanban/día.
-    if (fromTimeline && overId !== 'timeline') return
-    if (overId.startsWith('col:')) {
-      const status = overId.slice(4)
-      const patch = { status }
-      if (selectedDay && task.day !== selectedDay) patch.day = selectedDay
-      updateTask(task.id, patch)
-    } else if (overId === 'backlog') {
-      moveTaskDay(task.id, null)
-    } else if (overId.startsWith('day:')) {
-      moveTaskDay(task.id, overId.slice(4))
-    } else if (overId === 'timeline') {
-      const el = timelineRef.current
-      const translated = active.rect.current?.translated
-      if (el && translated) {
-        const trackRect = el.getBoundingClientRect()
-        const yWithin = translated.top - trackRect.top + el.scrollTop
-        const rangeStart = Number(el.dataset.rangeStart || 0)
-        const rangeEnd = Number(el.dataset.rangeEnd || MINUTES_PER_DAY)
-        let mins = rangeStart + (yWithin / el.scrollHeight) * (rangeEnd - rangeStart)
-        mins = Math.max(0, Math.min(MINUTES_PER_DAY - 1, Math.round(mins)))
-        setStartTime(task.id, mins)
-      }
-    }
-  }
-
-  // ── UI: sala no encontrada ────────────────────────────────────────────
-  if (roomState === ROOM_STATES.NOT_FOUND) {
+  if (room.state === ROOM_STATES.NOT_FOUND) {
     return (
-      <div className="flex h-[100dvh] flex-col items-center justify-center bg-slate-950 text-slate-100 p-4">
-        <div className="max-w-sm text-center">
-          <div className="mb-4 text-4xl">🚫</div>
-          <h2 className="mb-2 text-lg font-bold text-brand">Sala no encontrada</h2>
-          <p className="mb-4 text-sm text-slate-400">
-            Esta sala no existe o fue eliminada. Crea una sala nueva o pide un link actualizado.
-          </p>
-          <button
-            onClick={() => { setRoomState(ROOM_STATES.IDLE); setRoomCode(''); }}
-            className="rounded-md bg-brand px-4 py-2 text-sm font-bold text-slate-900 hover:bg-brand/90"
-          >
-            Volver al modo local
-          </button>
-        </div>
-      </div>
+      <FullScreenMessage
+        icon="danger"
+        title="Sala no encontrada"
+        text="Esta sala no existe o fue eliminada. Crea una sala nueva o pide un link actualizado."
+        actionLabel="Volver al modo local"
+        onAction={backToLocal}
+      />
     )
   }
 
-  // ── UI: pantalla de sala privada (denegado) ──────────────────────────
-  if (roomState === ROOM_STATES.DENIED) {
+  if (room.state === ROOM_STATES.DENIED) {
     return (
-      <div className="flex h-[100dvh] flex-col items-center justify-center bg-slate-950 text-slate-100 p-4">
-        <div className="max-w-sm text-center">
-          <div className="mb-4 text-4xl">🔒</div>
-          <h2 className="mb-2 text-lg font-bold text-brand">Sala privada</h2>
-          <p className="mb-4 text-sm text-slate-400">
-            No tienes acceso a esta sala. Pide al anfitrión un link válido con token.
-          </p>
-          <button
-            onClick={() => { setRoomState(ROOM_STATES.IDLE); setRoomCode(''); }}
-            className="rounded-md bg-brand px-4 py-2 text-sm font-bold text-slate-900 hover:bg-brand/90"
-          >
-            Volver al modo local
-          </button>
-        </div>
-      </div>
+      <FullScreenMessage
+        icon="danger"
+        title="Sala privada"
+        text="No tienes acceso a esta sala. Pide al anfitrión un link válido con token."
+        actionLabel="Volver al modo local"
+        onAction={backToLocal}
+      />
     )
   }
 
-  // ── UI: validando ────────────────────────────────────────────────────
-  if (roomState === ROOM_STATES.VALIDATING) {
-    return (
-      <div className="flex h-[100dvh] flex-col items-center justify-center bg-slate-950 text-slate-100 p-4">
-        <div className="max-w-sm text-center">
-          <div className="mb-4 text-4xl">⏳</div>
-          <h2 className="mb-2 text-lg font-bold text-brand">Validando acceso...</h2>
-          <p className="text-sm text-slate-400">Verificando token de sala.</p>
-        </div>
-      </div>
-    )
+  if (room.state === ROOM_STATES.VALIDATING) {
+    return <FullScreenMessage icon="inprogress" title="Validando acceso…" text="Verificando token de sala." />
   }
+
+  const progress = isMobile && view === 'day' ? dayProgress(tasksForDay(api.tasks, nav.selectedDay)) : null
 
   return (
-    <DndContext
-      sensors={sensors}
-      onDragStart={handleDragStart}
-      onDragEnd={handleDragEnd}
-      // Timeline solo vive en su carril: excluir todos los demás droppables
-      // cuando el drag nace en la línea de tiempo.
-      collisionDetection={(args) => {
-        if (args.active?.data?.current?.from === 'timeline') {
-          const containers = args.droppableContainers.filter((c) => c.id === 'timeline')
-          return pointerWithin({ ...args, droppableContainers: containers })
-        }
-        return rectIntersection(args)
-      }}
-      measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
-    >
-      <div className="flex h-[100dvh] flex-col bg-slate-950 text-slate-100">
-        <Toolbar
-          year={year}
-          month={month}
-          onPrev={() => changeMonth(-1)}
-          onNext={() => changeMonth(1)}
-          onToday={goToday}
-          onMenu={() => setSidebarOpen(true)}
-          onSync={() => setSyncOpen(true)}
-          syncStatus={syncStatus}
-          room={inRoom ? roomCode : ''}
-          roomRole={inRoom ? roomRole : ''}
-          onQuickAdd={!isViewer ? () => setQuickAddOpen(true) : undefined}
-        />
-        {!selectedDay && (
-          <div className="flex flex-1 min-h-0">
-            <Sidebar
-              tasks={tasks}
-              onNewTask={openNew}
-              onEdit={openEdit}
-              onDelete={removeTask}
-              open={sidebarOpen}
-              onClose={() => setSidebarOpen(false)}
-              isViewer={isViewer}
-            />
-            <main className="flex flex-1 flex-col min-w-0">
-              <div className="flex-1 pt-4 sm:pt-6 px-4 sm:px-6 min-h-0">
-                <Calendar year={year} month={month} tasks={tasks} onOpenDay={openDay} isViewer={isViewer} />
-              </div>
-            </main>
-          </div>
-        )}
-
-        <DayBoard
-          dateStr={selectedDay}
-          tasks={tasks}
-          onClose={() => setSelectedDay(null)}
-          onNewTask={openNew}
-          onEdit={openEdit}
-          onDelete={removeTask}
-          timelineRef={timelineRef}
+    <DndContext {...dndProps}>
+      <div className="flex h-[100dvh] flex-col bg-app text-t1">
+        <AppHeader
+          isMobile={isMobile}
           isViewer={isViewer}
+          view={view}
+          onViewChange={setView}
+          titleLong={nav.titleLong}
+          titleShort={nav.titleShort}
+          eyebrow={nav.eyebrow}
+          progress={progress}
+          onPrev={nav.goPrev}
+          onNext={nav.goNext}
+          onToday={nav.goToday}
+          prevLabel={nav.prevLabel}
+          nextLabel={nav.nextLabel}
+          sync={sync}
+          onShare={() => setShareOpen(true)}
+          onMenu={() => setMenuOpen(true)}
         />
 
-        <TaskModal
-          open={modal.open}
-          initial={modal.initial}
-          defaultDay={modal.defaultDay || todayStr()}
-          groupCount={modal.groupCount}
-          onSave={handleSave}
-          onDelete={handleDelete}
-          onSaveRecurring={handleSaveRecurring}
-          onDeleteSeries={handleDeleteSeries}
-          onUpdateRule={updateRecurringRule}
-          onClose={closeModal}
+        <div className={cx('flex min-h-0 flex-1', isMobile ? 'flex-col' : 'flex-wrap overflow-y-auto')}>
+          {!isMobile && (
+            <Backlog tasks={api.tasks} actions={ui.actions} isViewer={isViewer} onNewTask={() => ui.openNew({ day: null })} variant="aside" />
+          )}
+          <main className="flex h-full min-h-0 min-w-0 flex-col [flex:999_1_560px]">
+            {view === 'day' && (
+              <DayView
+                dateStr={nav.selectedDay}
+                tasks={api.tasks}
+                actions={ui.actions}
+                isViewer={isViewer}
+                isMobile={isMobile}
+                dragging={Boolean(activeDrag)}
+                onNewTask={ui.openNew}
+                onCreate={ui.quickCreate}
+                onPrev={nav.goPrev}
+                onNext={nav.goNext}
+                quickAddRef={quickAddRef}
+              />
+            )}
+            {view === 'timeline' && (
+              <TimelineView
+                dateStr={nav.selectedDay}
+                tasks={api.tasks}
+                actions={ui.actions}
+                isViewer={isViewer}
+                timelineRef={timelineRef}
+              />
+            )}
+            {view === 'month' && (
+              <div className="min-h-0 flex-1 overflow-y-auto p-4 md:px-5">
+                <MonthView
+                  dateStr={nav.selectedDay}
+                  tasks={api.tasks}
+                  isMobile={isMobile}
+                  isViewer={isViewer}
+                  onSelectDay={nav.selectDay}
+                />
+              </div>
+            )}
+          </main>
+        </div>
+
+        {isMobile && (
+          <Backlog
+            tasks={api.tasks}
+            actions={ui.actions}
+            isViewer={isViewer}
+            onNewTask={() => ui.openNew({ day: null })}
+            variant="drawer"
+            open={backlogOpen}
+            dragging={Boolean(activeDrag)}
+            onClose={() => setBacklogOpen(false)}
+          />
+        )}
+
+        <MobileMenu
+          open={isMobile && menuOpen}
+          onClose={() => setMenuOpen(false)}
+          view={view}
+          onViewChange={setView}
+          onToday={nav.goToday}
+          sync={sync}
+          isViewer={isViewer}
+          onShare={() => setShareOpen(true)}
+          onOpenBacklog={() => setBacklogOpen(true)}
+          backlogCount={unscheduledTasks(api.tasks).length}
         />
 
-        <SyncModal
-          open={syncOpen}
-          onClose={() => setSyncOpen(false)}
-          onLeaveRoom={leaveRoom}
-          currentRoom={inRoom ? roomCode : ''}
-          currentRole={roomRole}
-          onJoin={joinRoom}
+        <TaskFormModal
+          open={ui.modal.open}
+          initial={ui.modal.initial}
+          defaultDay={ui.modal.defaultDay}
+          defaultStatus={ui.modal.defaultStatus}
+          groupCount={ui.modal.groupCount}
+          onSave={ui.save}
+          onDelete={ui.remove}
+          onSaveRecurring={ui.saveRecurring}
+          onDeleteSeries={ui.removeSeries}
+          onUpdateRule={api.updateRecurringRule}
+          onClose={ui.closeModal}
+        />
+
+        <ShareModal
+          open={shareOpen}
+          onClose={closeShare}
+          currentRoom={room.inRoom ? room.code : ''}
+          currentRole={room.role}
+          onJoin={(code, token, role) => {
+            joinRoom(code, token, role)
+            closeShare()
+          }}
           onCreateRoom={createNewRoom}
-          onRotateTokens={handleRotateTokens}
-          syncStatus={syncStatus}
+          onRotateTokens={rotateRoomTokens}
+          onLeaveRoom={() => {
+            leaveRoom()
+            closeShare()
+          }}
+          syncStatus={api.syncStatus}
         />
 
-        <QuickAddBar
-          open={quickAddOpen}
-          onClose={() => setQuickAddOpen(false)}
-          onCreate={handleQuickCreate}
-        />
+        <StatusSheet task={ui.sheet.task} onSetStatus={ui.sheet.setStatus} onEdit={ui.sheet.edit} onClose={ui.sheet.close} />
 
-        {/* FAB móvil: captura rápida flotante en vista calendario */}
-        {!selectedDay && !isViewer && (
-          <button
-            onClick={() => setQuickAddOpen(true)}
-            className="fixed bottom-5 right-5 z-40 flex items-center gap-1.5 rounded-full bg-brand px-4 py-3 text-sm font-bold text-slate-900 shadow-2xl hover:bg-brand/90 sm:hidden"
-            title="Tarea rápida"
-          >
-            ✎ Rápida
-          </button>
-        )}
-
-        {/* Toast captura rápida con deshacer */}
-        {toast && (
-          <div className="fixed bottom-20 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 shadow-2xl sm:bottom-5">
-            <span className="text-sm text-slate-200">{toast.label}</span>
-            <button
-              onClick={() => {
-                toast.onUndo?.()
-                setToast(null)
-              }}
-              className="text-sm font-bold text-brand hover:text-brand/90"
-            >
-              Deshacer
-            </button>
-          </div>
-        )}
+        {toast.toast && <Toast label={toast.toast.label} onAction={toast.undo} />}
       </div>
 
-        {/* Clon visual del elemento arrastrado. Calendario -> barra fina;
-          kanban/backlog -> tarjeta. Timeline no usa overlay. */}
       <DragOverlay>
         {activeDrag && !activeDrag.id.startsWith('tl:') ? (
-          <DragPreview id={activeDrag.id} task={activeDrag.task} />
+          <TaskCardView
+            task={activeDrag.task}
+            timeLabel={activeDrag.task.day ? minutesToLabel(activeDrag.task.startMinutes) : null}
+            showStatus
+            dragging
+            isMobile={isMobile}
+          />
         ) : null}
       </DragOverlay>
     </DndContext>
-  )
-}
-
-// Réplica visual del elemento bajo el puntero durante el arrastre.
-function DragPreview({ id, task }) {
-  const meta = statusMeta(task.status)
-  // Barra del calendario (misma apariencia que TaskBar)
-  if (id.startsWith('cal:')) {
-    return (
-      <div
-        className="mx-0.5 opacity-95"
-        style={{ background: meta.color, color: meta.text, height: 'clamp(14px,1.15vw,30px)' }}
-      >
-        <div className="truncate rounded border border-black/10 px-1 text-[length:clamp(10px,0.7vw,16px)] leading-tight">
-          {task.title}
-        </div>
-      </div>
-    )
-  }
-  // Tarjeta del kanban / backlog (misma apariencia que TaskCard)
-  return (
-    <div className="rounded-md border border-brand-2/40 bg-slate-800 p-2 text-xs shadow-2xl">
-      <div className="flex items-start gap-2">
-        <span className="mt-1 h-2 w-2 shrink-0 rounded-full" style={{ background: meta.color }} />
-        <div className="min-w-0 flex-1">
-          <p className="truncate font-medium text-slate-100">{task.title}</p>
-          {task.day && (
-            <p className="mt-0.5 text-[10px] text-slate-500">{minutesToLabel(task.startMinutes)}</p>
-          )}
-        </div>
-      </div>
-    </div>
   )
 }

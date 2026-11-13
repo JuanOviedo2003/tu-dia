@@ -1,151 +1,107 @@
-/**
- * Tu Día - Design Tokens (CSS Variables)
- * 
- * Diseño psicológico: calma, baja carga cognitiva, refuerzo sutil
- * Ergonomía: Ley de Fitts (targets >=44px) + Ley de Hick (jerarquía clara)
- * Accesibilidad: WCAG 2.1 AA (contraste >= 4.5:1)
- */
-
 :root {
-  /* === COLORES - SUPERFICIES === */
-  --color-bg: #0f1419;
-  --color-bg-elevated: #111821;
-  --color-surface: #151b23;
-  --color-surface-2: #1c232d;
-  --color-surface-hover: #222b38;
-  --color-surface-active: #283241;
-  
-  /* === COLORES - BORDES === */
-  --color-border: #2a3545;
-  --color-border-subtle: #232d3b;
-  --color-border-strong: #354256;
-  
-  /* === COLORES - TEXTO === */
-  --color-text-primary: #e6edf3;      /* 15.3:1 sobre bg - AAA */
-  --color-text-secondary: #9fb0c3;    /* 7.1:1 sobre bg - AA */
-  --color-text-tertiary: #7a8b9e;     /* 4.6:1 sobre bg - AA */
-  --color-text-inverse: #0f1419;      /* Para texto sobre primario */
-  
-  /* === COLORES - ACCIÓN (desaturados, calmados) === */
-  --color-primary: #7aa2f7;           /* 4.6:1 AA con text-inverse */
-  --color-primary-hover: #8fb0ff;
-  --color-primary-active: #6b93e6;
-  --color-primary-subtle: rgba(122, 162, 247, 0.12);
-  
-  /* === COLORES - SEMÁNTICOS === */
-  --color-success: #7fb9a6;           /* 4.6:1 AA */
-  --color-success-subtle: rgba(127, 185, 166, 0.12);
-  --color-warning: #d9b75b;           /* 4.5:1 AA */
-  --color-warning-subtle: rgba(217, 183, 91, 0.12);
-  --color-danger: #e06c75;            /* 4.5:1 AA - SOLO destructivo */
-  --color-danger-hover: #e87a82;
-  --color-danger-subtle: rgba(224, 108, 117, 0.12);
-  --color-info: #7aa2f7;
-  --color-info-subtle: rgba(122, 162, 247, 0.12);
-  
-  /* === COLORES - FOCUS (accesible) === */
-  --color-focus: #8fb0ff;
-  --color-focus-ring: rgba(143, 176, 255, 0.5);
-  
-  /* === TIPOGRAFÍA === */
-  --font-sans: -apple-system, BlinkMacSystemFont, "Inter", system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-  
-  --text-xs: 0.75rem;      /* 12px */
-  --text-sm: 0.875rem;     /* 14px */
-  --text-base: 1rem;       /* 16px */
-  --text-lg: 1.125rem;     /* 18px */
-  --text-xl: 1.25rem;      /* 20px */
-  --text-2xl: 1.5rem;      /* 24px */
-  --text-3xl: 1.875rem;    /* 30px */
-  --text-4xl: 2.25rem;     /* 36px */
-  
-  --leading-tight: 1.25;
-  --leading-snug: 1.375;
-  --leading-normal: 1.5;
-  --leading-relaxed: 1.625;
-  
-  --font-normal: 400;
-  --font-medium: 500;
-  --font-semibold: 600;
-  
-  /* === ESPACIADO (escala 4pt) === */
-  --space-0: 0;
-  --space-px: 1px;
-  --space-0-5: 0.125rem;   /* 2px */
-  --space-1: 0.25rem;      /* 4px */
-  --space-1-5: 0.375rem;   /* 6px */
-  --space-2: 0.5rem;       /* 8px */
-  --space-2-5: 0.625rem;   /* 10px */
-  --space-3: 0.75rem;      /* 12px */
-  --space-3-5: 0.875rem;   /* 14px */
-  --space-4: 1rem;         /* 16px */
-  --space-5: 1.25rem;      /* 20px */
-  --space-6: 1.5rem;       /* 24px */
-  --space-7: 1.75rem;      /* 28px */
-  --space-8: 2rem;         /* 32px */
-  --space-9: 2.25rem;      /* 36px */
-  --space-10: 2.5rem;      /* 40px */
-  --space-12: 3rem;        /* 48px */
-  --space-16: 4rem;        /* 64px */
-  
-  /* === RADIOS === */
-  --radius-sm: 0.375rem;   /* 6px */
-  --radius-md: 0.5rem;     /* 8px */
-  --radius-lg: 0.75rem;    /* 12px */
-  --radius-xl: 1rem;       /* 16px */
-  --radius-2xl: 1.25rem;   /* 20px */
-  --radius-full: 9999px;
-  
-  /* === ELEVACIÓN (sutil, sin glow) === */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -2px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -4px rgba(0, 0, 0, 0.5);
-  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.6), 0 8px 10px -6px rgba(0, 0, 0, 0.6);
-  --shadow-focus: 0 0 0 3px var(--color-focus-ring);
-  
-  /* === ERGONOMÍA === */
-  --touch-target-min: 44px;
-  --touch-target-comfortable: 48px;
-  
-  /* === TRANSICIONES (sutiles) === */
-  --transition-fast: 150ms ease-in-out;
-  --transition-base: 200ms ease-in-out;
-  --transition-slow: 300ms ease-in-out;
+  --bg: #E6E9ED;
+  --surface-1: #DCE0E5;
+  --surface-2: #F1F3F5;
+  --surface-3: #D0D5DC;
+  --border: #C2C8D0;
+  --border-strong: #6F7986;
+
+  --text-1: #1B1F24;
+  --text-2: #454E58;
+  --text-3: #545D68;
+
+  --accent: #1F56BF;
+  --accent-hover: #1A4AA6;
+  --accent-press: #163E8C;
+  --on-accent: #F1F3F5;
+  --accent-subtle: #D6E2F6;
+
+  --status-todo: #47515D;   --status-todo-bg: #D6DBE2;   --status-todo-border: #C2C8D0;
+  --status-doing: #7A4400;  --status-doing-bg: #F1DFBF;  --status-doing-border: #DDBE88;
+  --status-review: #5A3E8A; --status-review-bg: #E1D9EF; --status-review-border: #C5B8DE;
+  --status-done: #12613F;   --status-done-bg: #CFE8DA;   --status-done-border: #A6D2BC;
+  --status-danger: #A32430; --status-danger-bg: #F1D3D6; --status-danger-border: #E2AEB4;
+  --status-doing-drop: #EACB94;
+
+  --fs-display: 28px;  --lh-display: 34px;
+  --fs-title: 22px;    --lh-title: 28px;
+  --fs-heading: 17px;  --lh-heading: 24px;
+  --fs-body-m: 16px;   --lh-body-m: 24px;
+  --fs-body: 15px;     --lh-body: 22px;
+  --fs-small: 13px;    --lh-small: 18px;
+  --fs-caption: 12px;  --lh-caption: 16px;
+  --fw-regular: 400; --fw-medium: 500; --fw-semibold: 600;
+
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+
+  --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-full: 999px;
+
+  --target-min: 44px; --target-thumb: 56px; --drop-zone: 96px;
+
+  --dur-fast: 120ms; --dur-base: 200ms; --dur-slow: 280ms;
 }
 
-/* === TAILWIND V4 THEME MAPPING === */
-@theme {
-  /* Colores semánticos */
-  --color-bg: var(--color-bg);
-  --color-surface: var(--color-surface);
-  --color-surface-2: var(--color-surface-2);
-  --color-border: var(--color-border);
-  --color-border-subtle: var(--color-border-subtle);
-  
-  --color-text-primary: var(--color-text-primary);
-  --color-text-secondary: var(--color-text-secondary);
-  --color-text-tertiary: var(--color-text-tertiary);
-  --color-text-inverse: var(--color-text-inverse);
-  
-  --color-primary: var(--color-primary);
-  --color-primary-hover: var(--color-primary-hover);
-  --color-success: var(--color-success);
-  --color-warning: var(--color-warning);
-  --color-danger: var(--color-danger);
-  --color-focus: var(--color-focus);
-  
-  /* Mantener compatibilidad con tokens existentes */
-  --color-brand: var(--color-primary);
-  --color-brand-2: var(--color-text-secondary);
-  --color-accent: var(--color-success);
-  
-  /* Tipografía */
-  --font-sans: var(--font-sans);
-  
-  /* Radios */
-  --radius-sm: var(--radius-sm);
-  --radius-md: var(--radius-md);
-  --radius-lg: var(--radius-lg);
-  --radius-xl: var(--radius-xl);
+@theme static {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  --shadow-drag: 0 12px 28px rgba(16, 24, 40, .16);
+  --shadow-drag-mobile: 0 16px 32px rgba(16, 24, 40, .18);
+  --shadow-menu: 0 8px 24px rgba(16, 24, 40, .14);
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+}
+
+@theme inline {
+  --color-app: var(--bg);
+  --color-s1: var(--surface-1);
+  --color-s2: var(--surface-2);
+  --color-s3: var(--surface-3);
+  --color-line: var(--border);
+  --color-line-strong: var(--border-strong);
+
+  --color-t1: var(--text-1);
+  --color-t2: var(--text-2);
+  --color-t3: var(--text-3);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-press: var(--accent-press);
+  --color-on-accent: var(--on-accent);
+  --color-accent-subtle: var(--accent-subtle);
+
+  --color-todo: var(--status-todo);
+  --color-todo-bg: var(--status-todo-bg);
+  --color-todo-border: var(--status-todo-border);
+  --color-doing: var(--status-doing);
+  --color-doing-bg: var(--status-doing-bg);
+  --color-doing-border: var(--status-doing-border);
+  --color-doing-drop: var(--status-doing-drop);
+  --color-review: var(--status-review);
+  --color-review-bg: var(--status-review-bg);
+  --color-review-border: var(--status-review-border);
+  --color-done: var(--status-done);
+  --color-done-bg: var(--status-done-bg);
+  --color-done-border: var(--status-done-border);
+  --color-danger: var(--status-danger);
+  --color-danger-bg: var(--status-danger-bg);
+  --color-danger-border: var(--status-danger-border);
+
+  --text-display: var(--fs-display);
+  --text-display--line-height: var(--lh-display);
+  --text-title: var(--fs-title);
+  --text-title--line-height: var(--lh-title);
+  --text-heading: var(--fs-heading);
+  --text-heading--line-height: var(--lh-heading);
+  --text-body-m: var(--fs-body-m);
+  --text-body-m--line-height: var(--lh-body-m);
+  --text-body: var(--fs-body);
+  --text-body--line-height: var(--lh-body);
+  --text-small: var(--fs-small);
+  --text-small--line-height: var(--lh-small);
+  --text-caption: var(--fs-caption);
+  --text-caption--line-height: var(--lh-caption);
+
+  --radius-sm: var(--r-sm);
+  --radius-md: var(--r-md);
+  --radius-lg: var(--r-lg);
+
 }

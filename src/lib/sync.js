@@ -1,4 +1,4 @@
-import { doc, onSnapshot, runTransaction, setDoc, getDoc } from 'firebase/firestore'
+import { doc, onSnapshot, runTransaction, setDoc } from 'firebase/firestore'
 import { db, auth, authReady } from './firebase'
 import { reconcile } from './syncMerge'
 import { sha256Hash } from './tokens'
@@ -11,6 +11,8 @@ const BASE_BACKOFF_MS = 1000
 // Acceso basado en tokens SHA-256 verificados por reglas.
 export function createSync({ getState, onState, onStatus }) {
   let roomId = null
+  let token = null
+  let role = null
   let unsub = null
   let docRef = null
   let pushTimer = null
@@ -97,32 +99,8 @@ export function createSync({ getState, onState, onStatus }) {
     }
   }
 
-  // Reclama sala legada (sin owner): primer visitante se convierte en owner.
-  async function adoptLegacyRoom(roomCode, editTokenHash, viewTokenHash) {
-    await authReady
-    const user = auth.currentUser
-    if (!user) return { ok: false, error: 'no-auth' }
-    const roomRef = doc(db, 'rooms', roomCode)
-    try {
-      await runTransaction(db, async (tx) => {
-        const snap = await tx.get(roomRef)
-        if (!snap.exists()) return
-        const data = snap.data()
-        if (data.ownerUid) return // ya tiene dueño
-        tx.update(roomRef, {
-          ownerUid: user.uid,
-          editTokenHash,
-          viewTokenHash,
-        })
-      })
-      return { ok: true }
-    } catch (err) {
-      return { ok: false, error: err?.code || 'unknown' }
-    }
-  }
-
   function push() {
-    if (!docRef || !claimReady) return
+    if (!docRef || !claimReady || role === 'viewer') return
     const user = auth.currentUser
     if (!user) return
     if (pushTimer) clearTimeout(pushTimer)
@@ -193,40 +171,49 @@ export function createSync({ getState, onState, onStatus }) {
     }
   }
 
-  // Rota tokens de una sala (solo owner).
-  async function rotateTokens(roomCode, newEditHash, newViewHash) {
+  async function updateRoomField(roomCode, field, value) {
     await authReady
-    const user = auth.currentUser
-    if (!user) return { ok: false, error: 'no-auth' }
+    if (!auth.currentUser) return { ok: false, error: 'no-auth' }
     const roomRef = doc(db, 'rooms', roomCode)
     try {
       await runTransaction(db, async (tx) => {
         const snap = await tx.get(roomRef)
-        if (!snap.exists()) throw new Error('Sala no existe')
-        const data = snap.data()
-        if (data.ownerUid !== user.uid) throw new Error('No eres owner')
-        tx.update(roomRef, {
-          editTokenHash: newEditHash,
-          viewTokenHash: newViewHash,
-        })
+        if (!snap.exists()) throw Object.assign(new Error('Sala no existe'), { code: 'not-found' })
+        tx.update(roomRef, { [field]: value })
       })
       return { ok: true }
     } catch (err) {
-      console.error('[sync] rotateTokens failed:', err?.code || err)
+      console.error(`[sync] update ${field} failed:`, err?.code || err)
       return { ok: false, error: err?.code || err?.message || 'unknown' }
     }
   }
 
-  async function start(id, token, role) {
+  function renewViewToken(roomCode, newViewHash) {
+    return updateRoomField(roomCode, 'viewTokenHash', newViewHash)
+  }
+
+  async function rotateEditToken(roomCode, newEditHash, newEditToken) {
+    const prev = { token, role }
+    teardown()
+    const result = await updateRoomField(roomCode, 'editTokenHash', newEditHash)
+    if (result.ok) await start(roomCode, newEditToken, 'editor')
+    else await start(roomCode, prev.token, prev.role)
+    push()
+    return result
+  }
+
+  async function start(id, nextToken, nextRole) {
     teardown()
     roomId = id
-    if (token) {
+    token = nextToken
+    role = nextRole
+    if (nextToken) {
       const user = await authReady
       if (!user) {
         onStatus?.('auth-error')
         return
       }
-      const result = await createClaim(id, token, role)
+      const result = await createClaim(id, nextToken, nextRole)
       if (!result.ok) {
         onStatus?.('auth-error')
         return
@@ -241,8 +228,8 @@ export function createSync({ getState, onState, onStatus }) {
     setRoom: start,
     push,
     createRoom,
-    rotateTokens,
-    adoptLegacyRoom,
+    renewViewToken,
+    rotateEditToken,
     stop: teardown,
     isConnected: () => connected,
   }

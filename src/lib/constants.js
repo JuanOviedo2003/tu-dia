@@ -1,20 +1,31 @@
-// Estado / constantes de dominio
-
 export const STATUSES = [
-  { key: 'todo', label: 'Por hacer', color: '#96ACB7', text: '#0b0f14' },
-  { key: 'inprogress', label: 'En curso', color: '#FFB17A', text: '#0b0f14' },
-  { key: 'review', label: 'En revisión', color: '#DCED31', text: '#0b0f14' },
-  { key: 'done', label: 'Listo', color: '#6FCF73', text: '#0b0f14' },
+  { key: 'todo', label: 'Pendiente', shortcut: '1', text: 'text-todo', bg: 'bg-todo-bg', border: 'border-todo-border', solid: 'border-todo', dropOver: 'bg-todo-border' },
+  { key: 'inprogress', label: 'En curso', shortcut: '2', text: 'text-doing', bg: 'bg-doing-bg', border: 'border-doing-border', solid: 'border-doing', dropOver: 'bg-doing-drop' },
+  { key: 'review', label: 'En revisión', shortcut: '3', text: 'text-review', bg: 'bg-review-bg', border: 'border-review-border', solid: 'border-review', dropOver: 'bg-review-border' },
+  { key: 'done', label: 'Hecho', shortcut: '4', text: 'text-done', bg: 'bg-done-bg', border: 'border-done-border', solid: 'border-done', dropOver: 'bg-done-border' },
 ]
 
-export const STATUS_KEYS = STATUSES.map((s) => s.key)
+export const DANGER_TONE = { text: 'text-danger', bg: 'bg-danger-bg', border: 'border-danger-border' }
 
 export function statusMeta(key) {
   return STATUSES.find((s) => s.key === key) || STATUSES[0]
 }
 
-export const DAY_MS = 86400000
+export function statusByShortcut(char) {
+  return STATUSES.find((s) => s.shortcut === char) || null
+}
+
 export const MINUTES_PER_DAY = 1440
+export const DEFAULT_START_MINUTES = 9 * 60
+export const DEFAULT_REPEAT_MONTHS = 6
+
+export const REPEAT_LABELS = { week: 'Cada semana', month: 'Cada mes' }
+
+export const VIEWS = [
+  { value: 'day', label: 'Día' },
+  { value: 'timeline', label: 'Línea de tiempo' },
+  { value: 'month', label: 'Mes' },
+]
 
 export function uid() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()

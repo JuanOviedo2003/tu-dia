@@ -7,6 +7,7 @@ const TOMB_KEY = 'tu-dia-tombstones-v1'
 const ROOM_KEY = 'tu-dia-room-v1'
 const TOKEN_KEY = 'tu-dia-token-v1'
 const ROLE_KEY = 'tu-dia-role-v1'
+const VIEW_TOKEN_KEY = 'tu-dia-view-token-v1'
 
 function seed() {
   const today = toDateStr(new Date())
@@ -118,6 +119,22 @@ export function saveToken(token) {
 export function loadToken() {
   try {
     const raw = localStorage.getItem(TOKEN_KEY)
+    return raw || null
+  } catch {
+    return null
+  }
+}
+
+export function saveViewToken(token) {
+  try {
+    if (token == null) localStorage.removeItem(VIEW_TOKEN_KEY)
+    else localStorage.setItem(VIEW_TOKEN_KEY, token)
+  } catch { /* almacenamiento lleno o no disponible: ignorar */ }
+}
+
+export function loadViewToken() {
+  try {
+    const raw = localStorage.getItem(VIEW_TOKEN_KEY)
     return raw || null
   } catch {
     return null

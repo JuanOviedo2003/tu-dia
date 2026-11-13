@@ -7,8 +7,12 @@ export function pad2(n) {
 }
 
 // minutos -> "HH:MM"
+export function clampMinutes(mins) {
+  return Math.max(0, Math.min(MINUTES_PER_DAY - 1, Math.round(mins)))
+}
+
 export function minutesToLabel(mins) {
-  const clamped = Math.max(0, Math.min(MINUTES_PER_DAY - 1, Math.round(mins)))
+  const clamped = clampMinutes(mins)
   const h = Math.floor(clamped / 60)
   const m = clamped % 60
   return `${pad2(h)}:${pad2(m)}`
