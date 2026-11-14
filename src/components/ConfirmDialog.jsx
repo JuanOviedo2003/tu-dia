@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import Button from './ui/Button'
 import Modal from './ui/Modal'
 
@@ -14,9 +15,10 @@ export default function ConfirmDialog({
   onCancel,
   busy = false,
 }) {
+  const messageId = useId()
   return (
-    <Modal open={open} onClose={onCancel} title={title}>
-      <p className="text-body text-t2">{message}</p>
+    <Modal open={open} onClose={onCancel} title={title} role="alertdialog" describedBy={messageId}>
+      <p id={messageId} className="text-body text-t2">{message}</p>
       <div className="mt-5 flex flex-col gap-2">
         <Button variant={confirmVariant} onClick={onConfirm} disabled={busy} className="w-full">
           {confirmLabel}

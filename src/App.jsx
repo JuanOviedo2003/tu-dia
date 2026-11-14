@@ -23,6 +23,8 @@ import Toast from './components/ui/Toast'
 import Backlog from './containers/Backlog'
 import DayView from './containers/DayView'
 import NameGate from './containers/NameGate'
+import QuickAdd from './containers/QuickAdd'
+import QuickAddSheet from './containers/QuickAddSheet'
 import TaskFormModal from './containers/TaskFormModal'
 const loadMonthView = () => import('./containers/MonthView')
 const loadShareModal = () => import('./containers/ShareModal')
@@ -65,24 +67,21 @@ export default function App() {
   const [shareOpen, setShareOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
   const [backlogOpen, setBacklogOpen] = useState(false)
-  const [focusRequest, setFocusRequest] = useState(0)
+  const [quickOpen, setQuickOpen] = useState(false)
   const quickAddRef = useRef(null)
 
   const { view, setView } = nav
 
   useEffect(() => {
-    if (focusRequest && view === 'day') {
-      quickAddRef.current?.focus()
-      setFocusRequest(0)
-    }
-  }, [focusRequest, view])
+    if (!isMobile) setQuickOpen(false)
+  }, [isMobile])
 
   useShortcuts({
     enabled: !activeDrag,
     onNew: () => {
       if (isViewer) return
-      setView('day')
-      setFocusRequest((n) => n + 1)
+      if (isMobile) setQuickOpen(true)
+      else quickAddRef.current?.focus()
     },
     onPrev: nav.goPrev,
     onNext: nav.goNext,
@@ -195,6 +194,12 @@ export default function App() {
 
         {shared.active && <SharedBanner ownerName={shared.ownerName} onBack={shared.close} />}
 
+        {!isMobile && !isViewer && (
+          <div className="shrink-0 px-5 pt-4">
+            <QuickAdd defaultDay={nav.selectedDay} onCreate={ui.quickCreate} inputRef={quickAddRef} />
+          </div>
+        )}
+
         <div className={cx('flex min-h-0 flex-1', isMobile ? 'flex-col' : 'flex-wrap overflow-y-auto')}>
           {!isMobile && (
             <Backlog tasks={api.tasks} actions={ui.actions} isViewer={isViewer} onNewTask={() => ui.openNew({ day: null })} variant="aside" />
@@ -209,10 +214,8 @@ export default function App() {
                 isMobile={isMobile}
                 dragging={Boolean(activeDrag)}
                 onNewTask={ui.openNew}
-                onCreate={ui.quickCreate}
                 onPrev={nav.goPrev}
                 onNext={nav.goNext}
-                quickAddRef={quickAddRef}
               />
             )}
             {view === 'timeline' && (
@@ -246,9 +249,22 @@ export default function App() {
           <BottomNav
             view={view}
             onViewChange={setView}
-            onAdd={() => (view === 'day' ? setFocusRequest((n) => n + 1) : ui.openNew({ day: nav.selectedDay }))}
+            onAdd={() => setQuickOpen(true)}
             onMenu={() => setMenuOpen(true)}
             showAdd={!isViewer}
+          />
+        )}
+
+        {isMobile && !isViewer && (
+          <QuickAddSheet
+            open={quickOpen && !activeDrag}
+            defaultDay={nav.selectedDay}
+            onCreate={ui.quickCreate}
+            onMoreDetails={() => {
+              setQuickOpen(false)
+              ui.openNew({ day: nav.selectedDay })
+            }}
+            onClose={() => setQuickOpen(false)}
           />
         )}
 

@@ -6,10 +6,8 @@ const PLACEHOLDERS = {
   mobile: 'Añadir… «gym 7pm»',
 }
 
-export default function QuickAdd({ defaultDay, onCreate, isViewer = false, size = 'desktop', inputRef }) {
+export default function QuickAdd({ defaultDay, onCreate, size = 'desktop', inputRef }) {
   const quick = useQuickAdd({ defaultDay, onCreate })
-
-  if (isViewer) return null
 
   const onKeyDown = (e) => {
     if (e.key === 'Enter' && !e.nativeEvent.isComposing) {

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { hasOpenModal } from './useModalA11y'
 
 const EDITABLE = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
 
@@ -14,6 +15,7 @@ export function useShortcuts({ enabled, onNew, onPrev, onNext, onToday }) {
     if (!enabled) return
     const onKey = (e) => {
       if (e.defaultPrevented) return
+      if (hasOpenModal()) return
       const key = e.key?.toLowerCase()
       if ((e.ctrlKey || e.metaKey) && key === 'k') {
         e.preventDefault()
@@ -21,7 +23,6 @@ export function useShortcuts({ enabled, onNew, onPrev, onNext, onToday }) {
         return
       }
       if (e.ctrlKey || e.metaKey || e.altKey || isTyping(e.target)) return
-      if (document.querySelector('[role="dialog"]')) return
       const action = { n: 'onNew', t: 'onToday', arrowleft: 'onPrev', arrowright: 'onNext' }[key]
       if (!action) return
       e.preventDefault()

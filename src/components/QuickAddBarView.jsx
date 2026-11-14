@@ -1,7 +1,6 @@
 import { cx } from '../lib/cx'
 import Button from './ui/Button'
 import Chip from './ui/Chip'
-import Fab from './ui/Fab'
 import Icon from './ui/Icon'
 import Kbd from './ui/Kbd'
 import StatusIcon from './ui/StatusIcon'
@@ -39,13 +38,9 @@ export default function QuickAddBarView({ size = 'desktop', text, onTextChange, 
           />
           {!mobile && !text && <Kbd>N</Kbd>}
         </div>
-        {mobile ? (
-          <Fab label="Añadir tarea" onClick={onSubmit} />
-        ) : (
-          <Button variant="primary" icon="plus" onClick={onSubmit} disabled={!canCreate}>
-            Añadir
-          </Button>
-        )}
+        <Button variant="primary" icon="plus" onClick={onSubmit} disabled={!canCreate}>
+          Añadir
+        </Button>
       </div>
       {chips && (
         <div className="mt-2 flex flex-wrap items-center gap-2">

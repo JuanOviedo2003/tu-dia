@@ -1,6 +1,7 @@
 import { unscheduledTasks } from '../lib/agenda'
 import { cx } from '../lib/cx'
 import { useEscapeKey } from '../hooks/useEscapeKey'
+import { hasOpenModal } from '../hooks/useModalA11y'
 import BacklogPanel from '../components/BacklogPanel'
 import { Droppable } from './Drag'
 import TaskCard from './TaskCard'
@@ -13,7 +14,9 @@ const DRAWER_CLASS = 'rise-in fixed inset-y-0 left-0 z-50 flex w-[86%] max-w-sm 
 
 export default function Backlog({ tasks, actions, isViewer, onNewTask, variant = 'aside', open = false, dragging = false, onClose }) {
   const drawer = variant === 'drawer'
-  useEscapeKey(drawer && open, onClose)
+  useEscapeKey(drawer && open, () => {
+    if (!hasOpenModal()) onClose?.()
+  })
 
   if (drawer && !open) return null
 
