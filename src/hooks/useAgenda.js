@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTasks } from './useTasks'
-import { readViewerLink, useSharedAgenda } from './useSharedAgenda'
+import { isOwnEditorLink, readViewerLink, useSharedAgenda } from './useSharedAgenda'
 import { normalizeRoomCode, parseInviteParams, truncateName } from '../lib/share'
+import { SHARED_OPEN_TIMEOUT_MS } from '../lib/constants'
 import {
   clearRoomCredentials,
   migrateLegacyViewer,
@@ -63,6 +64,10 @@ export function useAgenda() {
   const [booted, setBooted] = useState(false)
   const [onlineTick, setOnlineTick] = useState(0)
 
+  const [validationTimedOut, setValidationTimedOut] = useState(false)
+  const [offlineHold, setOfflineHold] = useState(false)
+
+  const syncCreds = useRef(null)
   const pendingCreds = useRef(null)
   const creatingRef = useRef(false)
   const occupiedRef = useRef(false)
@@ -99,6 +104,8 @@ export function useAgenda() {
     closeShared()
     if (code !== ownRoomCode) clearOwnRoom()
     pendingCreds.current = { code, token, role }
+    syncCreds.current = { code, token, role }
+    setOfflineHold(false)
     setRoomCode(code)
     setRoomState(ROOM_STATES.VALIDATING)
     setRoomRole(role)
@@ -142,7 +149,7 @@ export function useAgenda() {
       setRoomState(ROOM_STATES.DENIED)
     } else {
       if (viewerLink) {
-        joinShared(viewerLink.code, viewerLink.token)
+        if (!isOwnEditorLink(viewerLink)) joinShared(viewerLink.code, viewerLink.token)
         clearRoomParams()
       }
       const storedRoomCode = loadRoomCode()
@@ -157,6 +164,7 @@ export function useAgenda() {
         setRoomState(ROOM_STATES.VALIDATING)
         setRoomRole(storedRole)
         setTokens(readTokens(storedRole, storedToken))
+        syncCreds.current = { code: storedRoomCode, token: storedToken, role: storedRole }
         initSync(storedRoomCode, storedToken, storedRole)
         clearRoomParams()
       } else {
@@ -182,6 +190,38 @@ export function useAgenda() {
       else clearRoomCredentials()
     }
   }, [syncStatus, roomState, roomRole])
+
+  useEffect(() => {
+    if (roomState !== ROOM_STATES.VALIDATING) {
+      setValidationTimedOut(false)
+      return
+    }
+    if (validationTimedOut) return
+    const timer = setTimeout(() => setValidationTimedOut(true), SHARED_OPEN_TIMEOUT_MS)
+    return () => clearTimeout(timer)
+  }, [roomState, validationTimedOut])
+
+  const retryValidation = () => {
+    const creds = syncCreds.current
+    if (!creds) return
+    setOfflineHold(false)
+    setValidationTimedOut(false)
+    setRoomCode(creds.code)
+    setRoomRole(creds.role)
+    setTokens(readTokens(creds.role, creds.token))
+    setRoomState(ROOM_STATES.VALIDATING)
+    initSync(creds.code, creds.token, creds.role)
+  }
+
+  const continueOffline = () => {
+    stop()
+    setValidationTimedOut(false)
+    setOfflineHold(true)
+    setRoomCode('')
+    setRoomRole('')
+    setTokens(NO_TOKENS)
+    setRoomState(ROOM_STATES.IDLE)
+  }
 
   const createNewRoom = async () => {
     if (creatingRef.current) return { ok: false, error: 'busy' }
@@ -211,7 +251,7 @@ export function useAgenda() {
     }
   }
 
-  const occupied = roomState !== ROOM_STATES.IDLE || Boolean(pendingJoin) || shared.active
+  const occupied = roomState !== ROOM_STATES.IDLE || Boolean(pendingJoin) || shared.active || offlineHold
   occupiedRef.current = occupied
 
   useEffect(() => {
@@ -221,10 +261,14 @@ export function useAgenda() {
   }, [])
 
   useEffect(() => {
+    if (onlineTick && (offlineHold || validationTimedOut)) retryValidation()
+  }, [onlineTick])
+
+  useEffect(() => {
     if (!booted || !profileName || occupied || ownRoomCode || loadRoomCode()) return
     if (typeof navigator !== 'undefined' && navigator.onLine === false) return
     createNewRoom()
-  }, [booted, profileName, roomState, pendingJoin, onlineTick, shared.active])
+  }, [booted, profileName, roomState, pendingJoin, onlineTick, shared.active, offlineHold])
 
   useEffect(() => {
     if (roomState !== ROOM_STATES.EDITOR || !profileName || api.roomOwnerName || roomCode === ownRoomCode) return
@@ -251,6 +295,8 @@ export function useAgenda() {
 
   const resetToLocal = () => {
     pendingCreds.current = null
+    syncCreds.current = null
+    setOfflineHold(false)
     setRoomCode('')
     setRoomRole('')
     setTokens(NO_TOKENS)
@@ -285,6 +331,9 @@ export function useAgenda() {
       inRoom,
       isViewer: shared.active,
       tokens,
+      timedOut: validationTimedOut,
+      retry: retryValidation,
+      continueOffline,
     },
     requestJoin,
     pendingJoin,

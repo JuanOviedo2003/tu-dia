@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createSync } from '../lib/sync'
-import { loadShared, saveShared } from '../lib/storage'
+import { loadRole, loadRoomCode, loadShared, loadToken, saveShared } from '../lib/storage'
 import { NAME_REQUIRED_ERROR, SHARED_OPEN_TIMEOUT_MS } from '../lib/constants'
 import { normalizeRoomCode, parseInviteParams } from '../lib/share'
 
@@ -24,8 +24,17 @@ export function readViewerLink() {
   return { code: normalizeRoomCode(room), token }
 }
 
+export function isOwnEditorLink(link) {
+  return Boolean(link) && link.code === loadRoomCode() && Boolean(loadToken()) && (loadRole() || 'editor') === 'editor'
+}
+
+function readForeignViewerLink() {
+  const link = readViewerLink()
+  return isOwnEditorLink(link) ? null : link
+}
+
 export function useSharedAgenda({ profileName, saveProfile }) {
-  const [initialLink] = useState(readViewerLink)
+  const [initialLink] = useState(readForeignViewerLink)
   const [phase, setPhase] = useState(
     initialLink ? (profileName ? SHARED_PHASES.VALIDATING : SHARED_PHASES.ASKING_NAME) : SHARED_PHASES.IDLE,
   )

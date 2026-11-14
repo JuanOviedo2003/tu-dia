@@ -152,6 +152,19 @@ export default function App() {
   }
 
   if (roomGate === ROOM_STATES.VALIDATING) {
+    if (room.timedOut) {
+      return (
+        <FullScreenMessage
+          icon="danger"
+          title="Sin respuesta"
+          text="No se pudo abrir tu agenda. Revisa tu conexión."
+          actionLabel="Reintentar"
+          onAction={room.retry}
+          secondaryLabel="Usar sin conexión"
+          onSecondary={room.continueOffline}
+        />
+      )
+    }
     return <FullScreenMessage icon="inprogress" title="Validando acceso…" text="Verificando el link." />
   }
 
