@@ -121,6 +121,15 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: Verificar config de Firebase
+        env:
+          API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+        run: |
+          if [ -z "$API_KEY" ] || [ -z "$PROJECT_ID" ]; then
+            echo "Faltan los secrets VITE_FIREBASE_*: el build saldria en blanco"
+            exit 1
+          fi
       - name: Variables de entorno de build
         run: |
           {
