@@ -177,6 +177,41 @@ async function suggestion(page) {
   assert((await page.getByRole('option').count()) === 0, 'la lista sigue abierta tras aceptar');
 }
 
+async function highlight(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('reunión mañana 10am por 2 horas');
+  const marks = page.locator('[data-testid="quick-add-backdrop"] mark');
+  await marks.first().waitFor();
+  const texts = await marks.allTextContents();
+  assert(JSON.stringify(texts) === JSON.stringify(['mañana', '10am', 'por 2 horas']), `marks: ${JSON.stringify(texts)}`);
+  const backdropText = await page.locator('[data-testid="quick-add-backdrop"]').evaluate((el) => el.textContent.replace('​', ''));
+  assert(backdropText.startsWith('reunión '), 'el título no está en la capa trasera');
+  assert(!texts.some((t) => t.includes('reunión')), 'el título quedó marcado');
+
+  const diff = await page.evaluate(() => {
+    const field = document.getElementById('quick-add-input');
+    const mark = document.querySelector('[data-testid="quick-add-backdrop"] mark');
+    const cs = getComputedStyle(field);
+    const mirror = document.createElement('div');
+    const box = field.getBoundingClientRect();
+    mirror.style.cssText = `position:fixed;left:${box.left}px;top:${box.top}px;width:${box.width}px;white-space:pre-wrap;word-wrap:break-word;visibility:hidden;font-family:${cs.fontFamily};font-size:${cs.fontSize};font-weight:${cs.fontWeight};letter-spacing:${cs.letterSpacing};line-height:${cs.lineHeight}`;
+    mirror.textContent = field.value;
+    document.body.appendChild(mirror);
+    const start = field.value.indexOf('mañana');
+    const range = document.createRange();
+    range.setStart(mirror.firstChild, start);
+    range.setEnd(mirror.firstChild, start + 'mañana'.length);
+    const word = range.getBoundingClientRect();
+    const rect = mark.getBoundingClientRect();
+    mirror.remove();
+    return { dx: Math.abs(word.left - rect.left), dy: Math.abs(word.top - rect.top), dw: Math.abs(word.width - rect.width) };
+  });
+  assert(diff.dx <= 2 && diff.dy <= 2 && diff.dw <= 2, `desalineado: ${JSON.stringify(diff)}`);
+
+  await input.fill('hola');
+  assert((await marks.count()) === 0, 'hay marks sin spans');
+}
+
 async function monthView(page) {
   await page.getByRole('button', { name: 'Mes', exact: true }).first().click();
   const pastPending = page.getByRole('button', { name: /, 1 pendiente$/ });
@@ -241,6 +276,79 @@ async function mobile(page) {
   assert(focusedLabel === 'Añadir tarea', `foco tras Escape: ${focusedLabel}`);
 }
 
+async function storedTasks(page) {
+  return page.evaluate(() => JSON.parse(localStorage.getItem('tu-dia-tasks-v1') || '[]'));
+}
+
+async function editDayChip(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('reunión mañana');
+  const chip = page.getByRole('button', { name: /^Día: Mañana/ });
+  await chip.click();
+  assert((await chip.getAttribute('aria-expanded')) === 'true', 'chip de día sin aria-expanded');
+  assert((await chip.getAttribute('aria-haspopup')) === 'menu', 'chip de día sin aria-haspopup');
+  await page.getByRole('menuitemradio', { name: 'Pasado mañana' }).click();
+  await page.getByRole('menu').waitFor({ state: 'detached' });
+  await input.fill('reunión mañana y media');
+  await page.getByRole('button', { name: /^Día: .*\(editado\)/ }).waitFor();
+  await page.getByRole('button', { name: 'Añadir', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Tarea creada' }).waitFor();
+  const created = (await storedTasks(page)).find((t) => t.title.startsWith('reunión'));
+  assert(created && created.day === dayStr(2), `día de la tarea: ${created && created.day}`);
+}
+
+async function editStatusChip(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('Revisar informe');
+  await page.getByRole('button', { name: /^Estado: Pendiente/ }).click();
+  await page.getByRole('menuitemradio', { name: 'En curso' }).click();
+  await page.getByRole('button', { name: /^Estado: En curso/ }).waitFor();
+  await page.getByRole('button', { name: 'Añadir', exact: true }).click();
+  const card = page.locator('[data-task-id]', { hasText: 'Revisar informe' }).first();
+  await card.waitFor();
+  const column = await card.evaluate((el) => el.closest('section')?.getAttribute('aria-label') ?? null);
+  assert(column === 'En curso', `columna: ${column}`);
+}
+
+async function menuEscapeMobile(page) {
+  const nav = page.getByRole('navigation', { name: 'Navegación principal' });
+  await nav.getByRole('button', { name: 'Añadir tarea', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.waitFor();
+  await page.getByLabel('Añadir tarea rápida').fill('gym mañana');
+  const chip = page.getByRole('button', { name: /^Hora: / });
+  await chip.click();
+  const menu = page.getByRole('menu');
+  await menu.waitFor();
+  const box = await menu.boundingBox();
+  const view = await page.evaluate(() => window.visualViewport?.height ?? window.innerHeight);
+  assert(box.y >= 0 && box.y + box.height <= view, 'el menú se sale de la pantalla');
+  await page.keyboard.press('Escape');
+  await menu.waitFor({ state: 'detached' });
+  assert((await dialog.count()) === 1, 'Escape cerró la hoja');
+  const focused = await page.evaluate(() => document.activeElement?.getAttribute('aria-label') ?? null);
+  assert(focused && focused.startsWith('Hora:'), `foco tras Escape: ${focused}`);
+}
+
+async function customTimeKeyboard(page) {
+  await page.getByLabel('Añadir tarea rápida').fill('gym mañana');
+  await page.getByRole('button', { name: /^Hora: / }).click();
+  const menu = page.getByRole('menu');
+  const input = menu.locator('input');
+  await input.waitFor();
+  await input.focus();
+  await page.keyboard.type('0930');
+  const inInput = () => page.evaluate(() => document.activeElement?.tagName === 'INPUT');
+  assert(await inInput(), 'el foco salió del input al teclear');
+  let focused = null;
+  for (let i = 0; i < 5 && focused !== 'Aplicar'; i++) {
+    await page.keyboard.press('Tab');
+    focused = await page.evaluate(() => document.activeElement?.textContent ?? null);
+  }
+  assert(focused === 'Aplicar', `Tab desde el input: ${focused}`);
+  assert((await page.getByRole('menu').count()) === 1, 'Tab cerró el menú');
+}
+
 async function main() {
   let server;
   let browser;
@@ -271,6 +379,16 @@ async function main() {
     await runCase(browser, '4. Móvil', { viewport: MOBILE }, mobile);
     await runCase(browser, '5. Captura de dos líneas', {}, pasteTwoLines);
     await runCase(browser, '7. Aviso de más de 20 líneas', {}, overflowNotice);
+    await runCase(browser, '8. Chip de día editable', {}, editDayChip);
+    await runCase(browser, '9. Chip de estado editable', {}, editStatusChip);
+    await runCase(browser, '11. Teclado en hora personalizada', {}, customTimeKeyboard);
+    await runCase(browser, '10. Menú de chip con Escape en móvil', { viewport: MOBILE }, menuEscapeMobile);
+    await runCase(browser, '11. Resaltado en el campo', {}, highlight);
+    await runCase(browser, '12. Resaltado en la hoja móvil', { viewport: MOBILE }, async (page) => {
+      await page.getByRole('navigation', { name: 'Navegación principal' }).getByRole('button', { name: 'Añadir tarea', exact: true }).click();
+      await page.getByRole('dialog').waitFor();
+      await highlight(page);
+    });
     await runCase(browser, '6. Sugerencia de título', { tasks: [task('Comprar leche', dayStr(0), 'done')] }, suggestion);
   } catch (error) {
     results.push({ name: 'ejecución sin excepciones', ok: false, detail: error && error.message ? error.message : String(error) });

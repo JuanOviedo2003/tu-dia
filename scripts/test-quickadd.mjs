@@ -24,14 +24,16 @@ globalThis.localStorage = {
 }
 
 const modPath = path.resolve(import.meta.dirname, '../src/lib/quickAdd.js')
-const { parseQuickAdd, parseQuickAddLines, splitQuickAddLines } = await import(pathToFileURL(modPath).href)
+const { parseQuickAdd, parseQuickAddLines, splitQuickAddLines, highlightSegments } = await import(pathToFileURL(modPath).href)
+
 
 const pad = (n) => String(n).padStart(2, '0')
 const dateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-const tomorrow = new Date()
-tomorrow.setDate(tomorrow.getDate() + 1)
-const TOMORROW = dateStr(tomorrow)
-const TODAY = dateStr(new Date())
+const REF = new Date(2026, 10, 14, 10, 30)
+const at = (y, m, d) => dateStr(new Date(y, m - 1, d))
+const TODAY = at(2026, 11, 14)
+const TOMORROW = at(2026, 11, 15)
+const parse = (input) => parseQuickAdd(input, REF)
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 
@@ -44,7 +46,7 @@ const cases = [
   ['en 5 minutos no es duracion', 'llamar en 5 minutos', { durationMinutes: null }],
   ['dentro de 2 horas no es duracion', 'llamar dentro de 2 horas', { durationMinutes: null }],
   ['el N seguido de sustantivo no se consume', 'comprar el 2 tomos', { title: 'comprar el 2 tomos', day: null }],
-  ['el N seguido de lugar', 'pagar el 5 en casa', { day: parseQuickAdd('pagar el 5').day }],
+  ['el N seguido de lugar', 'pagar el 5 en casa', { day: parse('pagar el 5').day }],
   ['en revision con tilde', 'diseño del logo en revisión', { title: 'diseño del logo', status: 'review' }],
   ['en revision sin tilde', 'diseño del logo en revision', { title: 'diseño del logo', status: 'review' }],
   ['ya hecha', 'pagar luz ya hecha', { title: 'pagar luz', status: 'done' }],
@@ -82,15 +84,77 @@ const cases = [
   ['sin fecha anula la fecha', 'dentista mañana sin fecha', { title: 'dentista mañana', day: null, unscheduled: true }],
   ['sin fecha no se activa sola', 'comprar pan', { unscheduled: false }],
   ['compatibilidad dia y hora', 'dentista mañana 15:00', { title: 'dentista', day: TOMORROW, startMinutes: 900, repeat: 'none' }],
+  ['pasado manana', 'dentista pasado mañana', { title: 'dentista', day: at(2026, 11, 16) }, [['date', 'pasado mañana']]],
+  ['en 3 dias', 'pagar en 3 días', { title: 'pagar', day: at(2026, 11, 17) }, [['date', 'en 3 días']]],
+  ['en 2 semanas', 'revisión médica en 2 semanas', { title: 'revisión médica', day: at(2026, 11, 28) }, [['date', 'en 2 semanas']]],
+  ['en un mes', 'renovar seguro en un mes', { title: 'renovar seguro', day: at(2026, 12, 14) }, [['date', 'en un mes']]],
+  ['proximo lunes', 'entregar informe el próximo lunes', { title: 'entregar informe', day: at(2026, 11, 16) }, [['date', 'el próximo lunes']]],
+  ['lunes que viene', 'reunión el lunes que viene', { title: 'reunión', day: at(2026, 11, 16) }, [['date', 'el lunes que viene']]],
+  ['sabado que viene es el siguiente', 'fútbol el sábado que viene', { title: 'fútbol', day: at(2026, 11, 21) }, [['date', 'el sábado que viene']]],
+  ['este viernes', 'cena este viernes', { title: 'cena', day: at(2026, 11, 20) }, [['date', 'este viernes']]],
+  ['fin de mes', 'pagar luz fin de mes', { title: 'pagar luz', day: at(2026, 11, 30) }, [['date', 'fin de mes']]],
+  ['a fin de mes', 'cerrar caja a fin de mes', { title: 'cerrar caja', day: at(2026, 11, 30) }, [['date', 'a fin de mes']]],
+  ['a principios de mes', 'alquiler a principios de mes', { title: 'alquiler', day: at(2026, 12, 1) }, [['date', 'a principios de mes']]],
+  ['a mediados de mes', 'informe a mediados de mes', { title: 'informe', day: at(2026, 11, 15) }, [['date', 'a mediados de mes']]],
+  ['15 de enero', 'cumpleaños 15 de enero', { title: 'cumpleaños', day: at(2027, 1, 15) }, [['date', '15 de enero']]],
+  ['15/01', 'cumpleaños 15/01', { title: 'cumpleaños', day: at(2027, 1, 15) }, [['date', '15/01']]],
+  ['el 20 del mes actual', 'pagar el 20', { title: 'pagar', day: at(2026, 11, 20), doubts: [] }, [['date', 'el 20']]],
+  ['hoy', 'llamar hoy', { title: 'llamar', day: TODAY }, [['date', 'hoy']]],
+  ['esta noche', 'cenar esta noche', { title: 'cenar', day: TODAY, startMinutes: 21 * 60, doubts: [] }, [['date', 'esta noche']]],
+  ['esta tarde', 'estudiar esta tarde', { title: 'estudiar', day: TODAY, startMinutes: 16 * 60 }, [['date', 'esta tarde']]],
+  ['esta manana', 'correr esta mañana', { title: 'correr', day: TODAY, startMinutes: 9 * 60 }, [['date', 'esta mañana']]],
+  ['esta noche con hora', 'cine esta noche a las 10', { title: 'cine', day: TODAY, startMinutes: 22 * 60, doubts: [] }, [['date', 'esta noche'], ['time', 'a las 10']]],
+  ['esta tarde con hora 24h', 'cita esta tarde 17:30', { title: 'cita', day: TODAY, startMinutes: 17 * 60 + 30 }, [['date', 'esta tarde'], ['time', '17:30']]],
+  ['mediodia', 'comer mañana a mediodía', { title: 'comer', day: TOMORROW, startMinutes: 720, doubts: [] }, [['date', 'mañana'], ['time', 'a mediodía']]],
+  ['medianoche es 23:59 del dia indicado', 'fiesta mañana a medianoche', { title: 'fiesta', day: TOMORROW, startMinutes: 23 * 60 + 59 }, [['date', 'mañana'], ['time', 'a medianoche']]],
+  ['medianoche sin dia es hoy', 'entrega a medianoche', { title: 'entrega', day: TODAY, startMinutes: 23 * 60 + 59 }, [['time', 'a medianoche']]],
+  ['y media', 'dentista mañana a las 3 y media de la tarde', { title: 'dentista', day: TOMORROW, startMinutes: 15 * 60 + 30, doubts: [] }, [['date', 'mañana'], ['time', 'a las 3 y media de la tarde']]],
+  ['y media sin meridiem duda', 'dentista mañana a las 3 y media', { startMinutes: 3 * 60 + 30, doubts: ['time-without-meridiem'] }, [['date', 'mañana'], ['time', 'a las 3 y media']]],
+  ['y cuarto', 'yoga hoy a las 6 y cuarto pm', { title: 'yoga', day: TODAY, startMinutes: 18 * 60 + 15, doubts: [] }, [['date', 'hoy'], ['time', 'a las 6 y cuarto pm']]],
+  ['menos cuarto', 'tren hoy a las 4 menos cuarto pm', { title: 'tren', day: TODAY, startMinutes: 15 * 60 + 45 }, [['date', 'hoy'], ['time', 'a las 4 menos cuarto pm']]],
+  ['15h', 'reunión mañana 15h', { title: 'reunión', day: TOMORROW, startMinutes: 900, durationMinutes: null }, [['date', 'mañana'], ['time', '15h']]],
+  ['a las 15h', 'reunión mañana a las 15h', { title: 'reunión', startMinutes: 900, durationMinutes: null, doubts: [] }, [['date', 'mañana'], ['time', 'a las 15h']]],
+  ['2h sigue siendo duracion', 'clase mañana 2h', { title: 'clase', durationMinutes: 120, startMinutes: 540 }, [['date', 'mañana'], ['duration', '2h']]],
+  ['3pm', 'café hoy 3pm', { title: 'café', startMinutes: 900 }, [['date', 'hoy'], ['time', '3pm']]],
+  ['rango con pm', 'reunión mañana de 3 a 4pm', { title: 'reunión', day: TOMORROW, startMinutes: 900, durationMinutes: 60, doubts: [] }, [['date', 'mañana'], ['time', 'de 3 a 4pm']]],
+  ['rango con minutos', 'taller hoy de 10 a 11:30', { title: 'taller', day: TODAY, startMinutes: 600, durationMinutes: 90, doubts: [] }, [['date', 'hoy'], ['time', 'de 10 a 11:30']]],
+  ['rango invalido', 'taller hoy de 5pm a 4pm', { title: 'taller', durationMinutes: null, doubts: ['duration-ignored'] }, [['date', 'hoy'], ['time', 'de 5pm a 4pm']]],
+  ['rango sin marcas no es rango', 'comprar de 1 a 3 piezas', { title: 'comprar de 1 a 3 piezas', day: null }, []],
+  ['en 2 horas', 'llamar en 2 horas', { title: 'llamar', day: TODAY, startMinutes: 12 * 60 + 30, doubts: [] }, [['time', 'en 2 horas']]],
+  ['en 30 minutos', 'sacar pan en 30 minutos', { title: 'sacar pan', day: TODAY, startMinutes: 11 * 60, durationMinutes: null }, [['time', 'en 30 minutos']]],
+  ['en 2 horas pasa medianoche', 'llamar en 2 horas', { day: TOMORROW, startMinutes: 60 }, [['time', 'en 2 horas']], new Date(2026, 10, 14, 23, 0)],
+  ['lunes de pascua intacto', 'comprar pan para el lunes de pascua', { title: 'comprar pan para el lunes de pascua', day: null }, []],
+  ['nombre propio intacto', 'llamar a Pedro', { title: 'llamar a Pedro', day: null, startMinutes: 540, doubts: [] }, []],
+  ['viernes santo intacto', 'misa viernes santo', { title: 'misa viernes santo', day: null }, []],
+  ['spans combinados', 'reunión con Ana mañana 10am por 2 horas en progreso', { title: 'reunión con Ana' }, [['date', 'mañana'], ['time', '10am'], ['duration', 'por 2 horas'], ['status', 'en progreso']]],
+  ['spans repeat', 'gimnasio cada semana', { repeat: 'week' }, [['repeat', 'cada semana']]],
+  ['spans unscheduled', 'comprar pan sin fecha', { unscheduled: true }, [['unscheduled', 'sin fecha']]],
+  ['spans con espacios extra', '  dentista   mañana   15:00', { title: 'dentista', day: TOMORROW, startMinutes: 900 }, [['date', 'mañana'], ['time', '15:00']]],
+  ['spans estado hecha', 'llamar al banco, hecha', { status: 'done' }, [['status', ', hecha']]],
 ]
 
-const rows = cases.map(([name, input, expected]) => {
-  const result = parseQuickAdd(input)
+const spansOf = (input, result) => result.spans.map((s) => [s.kind, input.slice(s.start, s.end)])
+
+const rows = cases.map(([name, input, expected, spans, ref]) => {
+  const result = parseQuickAdd(input, ref || REF)
   const failed = Object.keys(expected).filter((k) => !same(result?.[k], expected[k]))
-  return { name, ok: failed.length === 0, detail: failed.map((k) => `${k}: esperado ${JSON.stringify(expected[k])}, obtuvo ${JSON.stringify(result?.[k])}`).join(' | ') }
+  const detail = failed.map((k) => `${k}: esperado ${JSON.stringify(expected[k])}, obtuvo ${JSON.stringify(result?.[k])}`)
+  if (result && spans) {
+    const got = spansOf(input, result)
+    if (!same(got, spans)) detail.push(`spans: esperado ${JSON.stringify(spans)}, obtuvo ${JSON.stringify(got)}`)
+  }
+  if (result && !result.spans.every((s, i, a) => s.end > s.start && (i === 0 || a[i - 1].end <= s.start))) detail.push('spans desordenados o solapados')
+  return { name, ok: detail.length === 0, detail: detail.join(' | ') }
 })
 
-const lines = parseQuickAddLines('comprar pan\n\n  gimnasio cada semana  \r\nllamar mañana 10am en progreso\n')
+const spanLines = parseQuickAddLines('hola mañana\n  cena hoy 8pm', REF)
+rows.push({
+  name: 'spans por linea son relativos a su linea',
+  ok: same(spanLines[0].spans, [{ start: 5, end: 11, kind: 'date' }]) && same(spanLines[1].spans.map((x) => 'cena hoy 8pm'.slice(x.start, x.end)), ['hoy', '8pm']),
+  detail: JSON.stringify(spanLines.map((l) => l.spans)),
+})
+
+const lines = parseQuickAddLines('comprar pan\n\n  gimnasio cada semana  \r\nllamar mañana 10am en progreso\n', REF)
 rows.push({
   name: 'varias lineas ignora vacias',
   ok: lines.length === 3 && lines[0].title === 'comprar pan' && lines[1].repeat === 'week' && lines[2].status === 'inprogress',
@@ -101,11 +165,20 @@ const hidden = parseQuickAddLines(Array.from({ length: 25 }, (_, i) => `tarea ${
 rows.push({ name: 'splitQuickAddLines cuenta todas', ok: splitQuickAddLines(Array.from({ length: 25 }, (_, i) => `t${i}`).join('\n')).length === 25 && hidden.length === 20, detail: '' })
 const many = parseQuickAddLines(Array.from({ length: 30 }, (_, i) => `tarea ${i}`).join('\n'))
 rows.push({ name: 'varias lineas maximo 20', ok: many.length === 20, detail: `obtuvo ${many.length}` })
+const hlRaw = 'comprar pan\n\n  cena hoy 8pm  \r\nllamar mañana\n'
+const hlLines = parseQuickAddLines(hlRaw, REF)
+const hlMarks = highlightSegments(hlRaw, hlLines).filter((x) => x.kind).map((x) => x.text)
+rows.push({
+  name: 'highlightSegments mapea spans a offsets del texto completo',
+  ok: hlLines.every((l) => hlRaw.slice(l.lineStart + l.trimOffset).startsWith(l.title.split(' ')[0])) && same(hlMarks, ['hoy', '8pm', 'mañana']),
+  detail: JSON.stringify([hlLines.map((l) => [l.lineStart, l.trimOffset]), hlMarks]),
+})
+rows.push({ name: 'highlightSegments sin spans devuelve vacio', ok: same(highlightSegments('hola', parseQuickAddLines('hola', REF)), []), detail: '' })
 rows.push({ name: 'entrada vacia', ok: parseQuickAdd('   ') === null && same(parseQuickAddLines(''), []), detail: '' })
 
-const dayOnly = parseQuickAdd('pagar el 5')
-const passedThisMonth = new Date().getDate() > 5
-const rolledOver = new Date(dayOnly.day + 'T00:00:00').getMonth() !== new Date().getMonth()
+const dayOnly = parse('pagar el 5')
+const passedThisMonth = REF.getDate() > 5
+const rolledOver = new Date(dayOnly.day + 'T00:00:00').getMonth() !== REF.getMonth()
 rows.push({
   name: 'duda fecha ambigua coherente',
   ok: dayOnly.title === 'pagar' && rolledOver === passedThisMonth && dayOnly.doubts.includes('ambiguous-date') === passedThisMonth,

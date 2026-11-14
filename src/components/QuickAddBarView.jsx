@@ -1,26 +1,30 @@
 import { cx } from '../lib/cx'
 import Button from './ui/Button'
 import Chip from './ui/Chip'
+import QuickAddPreviewCard from './QuickAddPreviewCard'
+import HighlightedText from './HighlightedText'
 import Icon from './ui/Icon'
 import Kbd from './ui/Kbd'
-import StatusIcon from './ui/StatusIcon'
 
 export default function QuickAddBarView({
   size = 'desktop',
   text,
+  segments,
   onTextChange,
   onSubmit,
   onKeyDown,
   inputRef,
+  backdropRef,
   placeholder,
   canCreate,
-  chips,
+  card,
   preview,
   suggestions,
   onPickSuggestion,
   showHint,
 }) {
   const mobile = size === 'mobile'
+  const fieldTone = mobile ? 'text-body-m' : 'text-body'
   const listOpen = suggestions.items.length > 0
   const optionId = (i) => `${suggestions.listId}-${i}`
   return (
@@ -39,26 +43,32 @@ export default function QuickAddBarView({
             <label htmlFor="quick-add-input" className="sr-only">
               Añadir tarea rápida
             </label>
-            <textarea
-              id="quick-add-input"
-              ref={inputRef}
-              rows={1}
-              value={text}
-              onChange={(e) => onTextChange(e.target.value)}
-              onKeyDown={onKeyDown}
-              placeholder={placeholder}
-              enterKeyHint="done"
-              autoComplete="off"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={listOpen}
-              aria-controls={suggestions.listId}
-              aria-activedescendant={listOpen && suggestions.activeIndex >= 0 ? optionId(suggestions.activeIndex) : undefined}
-              className={cx(
-                'block min-w-0 flex-1 resize-none border-0 bg-transparent p-0 text-t1 outline-none placeholder:text-t3',
-                mobile ? 'text-body-m' : 'text-body',
-              )}
-            />
+            <div className="relative min-w-0 flex-1">
+              {segments.length > 0 && <HighlightedText segments={segments} backdropRef={backdropRef} className={fieldTone} />}
+              <textarea
+                id="quick-add-input"
+                ref={inputRef}
+                rows={1}
+                value={text}
+                onChange={(e) => onTextChange(e.target.value)}
+                onKeyDown={onKeyDown}
+                onScroll={(e) => {
+                  if (backdropRef.current) backdropRef.current.scrollTop = e.currentTarget.scrollTop
+                }}
+                placeholder={placeholder}
+                enterKeyHint="done"
+                autoComplete="off"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={listOpen}
+                aria-controls={suggestions.listId}
+                aria-activedescendant={listOpen && suggestions.activeIndex >= 0 ? optionId(suggestions.activeIndex) : undefined}
+                className={cx(
+                  'relative block w-full resize-none border-0 bg-transparent p-0 text-t1 outline-none [scrollbar-width:none] placeholder:text-t3',
+                  fieldTone,
+                )}
+              />
+            </div>
             {!mobile && !text && (
               <span className="flex h-6 items-center">
                 <Kbd>N</Kbd>
@@ -97,35 +107,7 @@ export default function QuickAddBarView({
           Añadir
         </Button>
       </div>
-      {chips && (
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          {chips.titleMissing && (
-            <Chip tone="danger" icon={<StatusIcon status="danger" size={12} />}>
-              Falta el título
-            </Chip>
-          )}
-          <Chip tone="accent">{chips.dayLabel}</Chip>
-          <Chip tone="accent">{chips.timeLabel}</Chip>
-          {chips.statusLabel && <Chip tone="accent">{chips.statusLabel}</Chip>}
-          {chips.durationLabel && <Chip tone="accent">{chips.durationLabel}</Chip>}
-          {chips.repeatLabel && (
-            <Chip tone="accent" icon={<Icon name="repeat" size={12} />}>
-              {chips.repeatLabel}
-            </Chip>
-          )}
-          {chips.needsDay && (
-            <Chip tone="danger" icon={<StatusIcon status="danger" size={12} />}>
-              Falta el día para repetir
-            </Chip>
-          )}
-          {chips.doubts.map((doubt) => (
-            <Chip key={doubt} tone="warning">
-              {doubt}
-            </Chip>
-          ))}
-          {showHint && <span className="text-caption text-t3">Enter para guardar, Shift+Enter para otra tarea</span>}
-        </div>
-      )}
+      {card && <QuickAddPreviewCard card={card} showHint={showHint} />}
       {preview && (
         <div className="mt-2">
           <p className="text-small font-medium text-t2">{preview.count === 1 ? '1 tarea' : `${preview.count} tareas`}</p>

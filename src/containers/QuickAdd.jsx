@@ -13,6 +13,7 @@ export default function QuickAdd({ defaultDay, tasks, onCreate, size = 'desktop'
   const quick = useQuickAdd({ defaultDay, tasks, onCreate })
   const localRef = useRef(null)
   const fieldRef = inputRef ?? localRef
+  const backdropRef = useRef(null)
 
   useLayoutEffect(() => {
     const el = fieldRef.current
@@ -51,13 +52,15 @@ export default function QuickAdd({ defaultDay, tasks, onCreate, size = 'desktop'
     <QuickAddBarView
       size={size}
       text={quick.text}
+      segments={quick.segments}
       onTextChange={quick.setText}
       onSubmit={quick.canCreate ? quick.submit : () => fieldRef.current?.focus()}
       onKeyDown={onKeyDown}
       inputRef={fieldRef}
+      backdropRef={backdropRef}
       placeholder={PLACEHOLDERS[size]}
       canCreate={quick.canCreate}
-      chips={quick.chips}
+      card={quick.card}
       preview={quick.preview}
       suggestions={quick.suggestions}
       onPickSuggestion={quick.pick}
