@@ -1,7 +1,8 @@
 import { STATUSES } from '../lib/constants'
+import { formatDuration } from '../lib/time'
 import RepeatField from './RepeatField'
 import Button from './ui/Button'
-import { Field, Input, Textarea } from './ui/Field'
+import { Field, Input, Select, Textarea } from './ui/Field'
 import StatusButton from './ui/StatusButton'
 import StatusIcon from './ui/StatusIcon'
 
@@ -15,6 +16,7 @@ export default function TaskFormView({
   onDurationChange,
   ruleHint,
   repeatWarning,
+  durationOptions,
   isEditing,
   hasSeries,
   seriesCount,
@@ -48,6 +50,17 @@ export default function TaskFormView({
           <Input type="time" step="60" value={form.start} onChange={(e) => onFieldChange('start')(e.target.value)} />
         </Field>
       </div>
+
+      <Field label="Duración" hint="Se ve en la línea de tiempo">
+        <Select value={form.durationMinutes} onChange={(e) => onFieldChange('durationMinutes')(e.target.value)}>
+          <option value="">Sin duración</option>
+          {durationOptions.map((m) => (
+            <option key={m} value={m}>
+              {formatDuration(m)}
+            </option>
+          ))}
+        </Select>
+      </Field>
 
       <div>
         <span className="mb-1 block text-small font-medium text-t2">Estado</span>

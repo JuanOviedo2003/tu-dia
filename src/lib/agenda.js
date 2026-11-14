@@ -1,6 +1,6 @@
 import { STATUSES } from './constants'
 import { fromDateStr, toDateStr, todayStr } from './storage'
-import { monthName } from './time'
+import { monthName, normalizeDuration } from './time'
 
 const byStart = (a, b) => a.startMinutes - b.startMinutes
 
@@ -40,7 +40,7 @@ export function assignLanes(dayTasks) {
   const placed = dayTasks.map((task) => {
     let lane = laneEnds.findIndex((end) => end <= task.startMinutes)
     if (lane === -1) lane = laneEnds.length
-    laneEnds[lane] = task.startMinutes + LANE_SLOT_MINUTES
+    laneEnds[lane] = task.startMinutes + (normalizeDuration(task.durationMinutes) ?? LANE_SLOT_MINUTES)
     return { task, lane }
   })
   return { placed, laneCount: Math.max(1, laneEnds.length) }
@@ -137,4 +137,25 @@ export function monthGrid(dateStr) {
     return { dateStr: toDateStr(date), dayNumber: i + 1, weekday: (leadingBlanks + i) % 7 }
   })
   return { leadingBlanks, days }
+}
+
+const MAX_SUGGESTIONS = 5
+const MIN_SUGGEST_CHARS = 2
+
+const foldText = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+
+export function suggestTitles(tasks, line) {
+  const query = foldText((line || '').trim())
+  if (query.length < MIN_SUGGEST_CHARS) return []
+  const seen = new Set()
+  const out = []
+  const recent = [...tasks].sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+  for (const { title } of recent) {
+    const folded = foldText((title || '').trim())
+    if (!folded || folded === query || !folded.startsWith(query) || seen.has(folded)) continue
+    seen.add(folded)
+    out.push(title.trim())
+    if (out.length === MAX_SUGGESTIONS) break
+  }
+  return out
 }

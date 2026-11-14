@@ -4,6 +4,7 @@ const TONES = {
   neutral: 'bg-s1 border border-line text-t2',
   accent: 'bg-accent-subtle text-accent',
   danger: 'bg-danger-bg border border-danger-border text-danger',
+  warning: 'bg-doing-bg border border-doing-border text-doing',
 }
 
 export default function Chip({ tone = 'neutral', icon, className, children }) {

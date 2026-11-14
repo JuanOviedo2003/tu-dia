@@ -12,9 +12,19 @@ export function useToast() {
     return () => clearTimeout(timer)
   }, [toast])
 
-  const show = useCallback((label, undoFn) => {
+  const show = useCallback((label, undoFn, extraActions = []) => {
     onUndo.current = undoFn
-    setToast({ label })
+    setToast({
+      label,
+      hasUndo: typeof undoFn === 'function',
+      extraActions: extraActions.map((action) => ({
+        label: action.label,
+        onClick: () => {
+          action.onClick()
+          setToast(null)
+        },
+      })),
+    })
   }, [])
 
   const undo = useCallback(() => {

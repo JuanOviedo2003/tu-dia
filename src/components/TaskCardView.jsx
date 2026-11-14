@@ -1,4 +1,5 @@
 import { cx } from '../lib/cx'
+import { formatDuration, normalizeDuration } from '../lib/time'
 import StatusBadge from './ui/StatusBadge'
 
 const REPEAT_LABEL = { week: 'Recurrente · semanal', month: 'Recurrente · mensual' }
@@ -20,7 +21,8 @@ export default function TaskCardView({
   className,
 }) {
   const done = task.status === 'done'
-  const meta = [task.description, task.groupId ? REPEAT_LABEL[task.pattern] ?? 'Recurrente' : null].filter(Boolean)
+  const duration = timeLabel ? normalizeDuration(task.durationMinutes) : null
+  const meta = [duration ? formatDuration(duration) : null, task.description, task.groupId ? REPEAT_LABEL[task.pattern] ?? 'Recurrente' : null].filter(Boolean)
 
   return (
     <div

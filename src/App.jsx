@@ -196,7 +196,7 @@ export default function App() {
 
         {!isMobile && !isViewer && (
           <div className="shrink-0 px-5 pt-4">
-            <QuickAdd defaultDay={nav.selectedDay} onCreate={ui.quickCreate} inputRef={quickAddRef} />
+            <QuickAdd defaultDay={nav.selectedDay} tasks={api.tasks} onCreate={ui.quickCreate} inputRef={quickAddRef} />
           </div>
         )}
 
@@ -259,6 +259,7 @@ export default function App() {
           <QuickAddSheet
             open={quickOpen && !activeDrag}
             defaultDay={nav.selectedDay}
+            tasks={api.tasks}
             onCreate={ui.quickCreate}
             onMoreDetails={() => {
               setQuickOpen(false)
@@ -351,7 +352,7 @@ export default function App() {
 
         <StatusSheet task={ui.sheet.task} onSetStatus={ui.sheet.setStatus} onEdit={ui.sheet.edit} onClose={ui.sheet.close} />
 
-        {toast.toast && <Toast label={toast.toast.label} onAction={toast.undo} />}
+        {toast.toast && <Toast label={toast.toast.label} onAction={toast.toast.hasUndo ? toast.undo : undefined} extraActions={toast.toast.extraActions} />}
       </div>
 
       <DragOverlay>

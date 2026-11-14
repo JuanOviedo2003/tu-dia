@@ -25,6 +25,29 @@ export function labelToMinutes(label) {
   return (h || 0) * 60 + (m || 0)
 }
 
+const DURATION_STEP = 5
+const DURATION_MIN = 5
+const DURATION_MAX = 720
+
+export function normalizeDuration(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null
+  const stepped = Math.round(value / DURATION_STEP) * DURATION_STEP
+  return Math.max(DURATION_MIN, Math.min(DURATION_MAX, stepped))
+}
+
+export function withDuration(task) {
+  const { durationMinutes, ...rest } = task
+  const duration = normalizeDuration(durationMinutes)
+  return duration ? { ...rest, durationMinutes: duration } : rest
+}
+
+export function formatDuration(minutes) {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h && m) return `${h} h ${m} min`
+  return h ? `${h} h` : `${m} min`
+}
+
 // posición (%) dentro del día para una barra
 export function topPercent(start) {
   return (start / MINUTES_PER_DAY) * 100

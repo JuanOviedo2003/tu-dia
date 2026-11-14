@@ -1,6 +1,7 @@
 // Persistencia en localStorage
 
 import { uid } from './constants'
+import { withDuration } from './time'
 
 const KEY = 'tu-dia-tasks-v1'
 const TOMB_KEY = 'tu-dia-tombstones-v1'
@@ -61,7 +62,7 @@ export function loadTasks() {
     if (!Array.isArray(parsed)) return seed()
     // Migración: se añadió updatedAt al modelo.
     return parsed.map((t) => ({
-      ...t,
+      ...withDuration(t),
       updatedAt: t.updatedAt || Date.now(),
     }))
   } catch {

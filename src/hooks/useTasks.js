@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadTasks, saveTasks, loadTombstones, saveTombstones } from '../lib/storage'
 import { uid } from '../lib/constants'
+import { withDuration } from '../lib/time'
 import { createSync } from '../lib/sync'
 import { generateRecurring, nextOccurrence } from '../lib/recurring'
 import { generateRoomTokens, generateToken, sha256Hash } from '../lib/tokens'
@@ -61,13 +62,13 @@ export function useTasks(roomRole, onEditTokenMigrated) {
   }, [tasks, tombstones, sync])
 
   const addTask = useCallback((data) => {
-    const task = { id: uid(), updatedAt: stamp(), ...data }
+    const task = withDuration({ id: uid(), updatedAt: stamp(), status: 'todo', ...data })
     setTasks((prev) => [...prev, task])
     return task
   }, [])
 
   const updateTask = useCallback((id, patch) => {
-    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, ...patch, updatedAt: stamp() } : t)))
+    setTasks((prev) => prev.map((t) => (t.id === id ? withDuration({ ...t, ...patch, updatedAt: stamp() }) : t)))
   }, [])
 
   const removeTask = useCallback((id) => {
@@ -114,19 +115,20 @@ export function useTasks(roomRole, onEditTokenMigrated) {
 
           // Crear la siguiente si existe
           if (next) {
-            const newTask = {
+            const newTask = withDuration({
               id: uid(),
               title: task.title,
               description: task.description || '',
               day: next,
               startMinutes: task.startMinutes,
+              durationMinutes: task.durationMinutes,
               status: 'todo',
               updatedAt: stamp(),
               groupId: task.groupId,
               pattern,
               windowMonths,
               baseDay,
-            }
+            })
             setTasks((prev) => [...prev, newTask])
           }
           // Si next es null, la serie se cierra (no se genera más)
@@ -157,19 +159,22 @@ export function useTasks(roomRole, onEditTokenMigrated) {
   const addRecurringTasks = useCallback((base, { pattern, months }) => {
     const days = generateRecurring(base.day, pattern, months)
     const groupId = uid()
-    const created = days.map((day) => ({
-      id: uid(),
-      title: base.title,
-      description: base.description || '',
-      day,
-      startMinutes: base.startMinutes,
-      status: base.status,
-      updatedAt: stamp(),
-      groupId,
-      pattern,
-      windowMonths: months,
-      baseDay: base.day,
-    }))
+    const created = days.map((day) =>
+      withDuration({
+        id: uid(),
+        title: base.title,
+        description: base.description || '',
+        day,
+        startMinutes: base.startMinutes,
+        durationMinutes: base.durationMinutes,
+        status: base.status || 'todo',
+        updatedAt: stamp(),
+        groupId,
+        pattern,
+        windowMonths: months,
+        baseDay: base.day,
+      }),
+    )
     setTasks((prev) => [...prev, ...created])
     return created
   }, [])
@@ -219,19 +224,20 @@ export function useTasks(roomRole, onEditTokenMigrated) {
         const baseTask = lastDone || task
         filtered = [
           ...filtered,
-          {
+          withDuration({
             id: uid(),
             title: baseTask.title,
             description: baseTask.description || '',
             day: next,
             startMinutes: baseTask.startMinutes,
+            durationMinutes: baseTask.durationMinutes,
             status: 'todo',
             updatedAt: stamp(),
             groupId,
             pattern: newPattern,
             windowMonths: newWindowMonths,
             baseDay: newBaseDay,
-          },
+          }),
         ]
       }
 

@@ -147,6 +147,36 @@ async function createAndMove(page) {
   assert(column !== 'Pendiente' && column !== null, `la tarea no cambió de columna (${column})`);
 }
 
+async function pasteTwoLines(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('Primera tarea\nSegunda tarea');
+  await page.getByText('2 tareas', { exact: true }).waitFor();
+  await input.press('Enter');
+  await page.getByRole('status').filter({ hasText: '2 tareas creadas' }).waitFor();
+  assert((await page.locator('[data-task-id]', { hasText: 'Primera tarea' }).count()) === 1, 'falta "Primera tarea"');
+  assert((await page.locator('[data-task-id]', { hasText: 'Segunda tarea' }).count()) === 1, 'falta "Segunda tarea"');
+}
+
+async function overflowNotice(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill(Array.from({ length: 22 }, (_, i) => `Tarea ${i}`).join('\n'));
+  await page.getByText('Máx. 20 tareas por vez: se ignorarán 2 líneas').waitFor();
+  await input.press('Enter');
+  await page.getByRole('status').filter({ hasText: '20 tareas creadas · 2 líneas ignoradas' }).waitFor();
+}
+
+async function suggestion(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('comp');
+  const option = page.getByRole('option', { name: 'Comprar leche' });
+  await option.waitFor();
+  assert((await input.getAttribute('aria-expanded')) === 'true', 'combobox sin aria-expanded');
+  await input.press('ArrowDown');
+  await input.press('Tab');
+  assert((await input.inputValue()) === 'Comprar leche', `valor tras Tab: ${await input.inputValue()}`);
+  assert((await page.getByRole('option').count()) === 0, 'la lista sigue abierta tras aceptar');
+}
+
 async function monthView(page) {
   await page.getByRole('button', { name: 'Mes', exact: true }).first().click();
   const pastPending = page.getByRole('button', { name: /, 1 pendiente$/ });
@@ -239,6 +269,9 @@ async function main() {
       monthView,
     );
     await runCase(browser, '4. Móvil', { viewport: MOBILE }, mobile);
+    await runCase(browser, '5. Captura de dos líneas', {}, pasteTwoLines);
+    await runCase(browser, '7. Aviso de más de 20 líneas', {}, overflowNotice);
+    await runCase(browser, '6. Sugerencia de título', { tasks: [task('Comprar leche', dayStr(0), 'done')] }, suggestion);
   } catch (error) {
     results.push({ name: 'ejecución sin excepciones', ok: false, detail: error && error.message ? error.message : String(error) });
   } finally {

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
-import { minutesToLabel, labelToMinutes } from '../lib/time'
-import { DEFAULT_REPEAT_MONTHS, DEFAULT_START_MINUTES, REPEAT_LABELS } from '../lib/constants'
+import { minutesToLabel, labelToMinutes, normalizeDuration } from '../lib/time'
+import { DEFAULT_REPEAT_MONTHS, DEFAULT_START_MINUTES, DURATION_OPTIONS, REPEAT_LABELS } from '../lib/constants'
 import { previewCount, clampWarning } from '../lib/recurring'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -12,6 +12,7 @@ function emptyForm(defaultDay, defaultStatus) {
     description: '',
     day: normalizeDay(defaultDay),
     start: minutesToLabel(DEFAULT_START_MINUTES),
+    durationMinutes: '',
     status: defaultStatus || 'todo',
   }
 }
@@ -29,6 +30,7 @@ export function useTaskForm({ open, initial, defaultDay, defaultStatus, onSave, 
         description: initial.description || '',
         day: normalizeDay(initial.day),
         start: minutesToLabel(initial.startMinutes),
+        durationMinutes: String(normalizeDuration(initial.durationMinutes) ?? ''),
         status: initial.status || 'todo',
       })
     } else {
@@ -59,6 +61,12 @@ export function useTaskForm({ open, initial, defaultDay, defaultStatus, onSave, 
 
   const saveDisabled = !form.title.trim()
 
+  const currentDuration = normalizeDuration(Number(form.durationMinutes))
+  const durationOptions =
+    currentDuration && !DURATION_OPTIONS.includes(currentDuration)
+      ? [...DURATION_OPTIONS, currentDuration].sort((a, b) => a - b)
+      : DURATION_OPTIONS
+
   const submit = () => {
     if (!form.title.trim()) return
     const data = {
@@ -66,6 +74,7 @@ export function useTaskForm({ open, initial, defaultDay, defaultStatus, onSave, 
       description: form.description.trim(),
       day: form.day || null,
       startMinutes: labelToMinutes(form.start),
+      durationMinutes: normalizeDuration(Number(form.durationMinutes)),
       status: form.status,
     }
     if (!isEditing && repeat !== 'none') {
@@ -98,6 +107,7 @@ export function useTaskForm({ open, initial, defaultDay, defaultStatus, onSave, 
     ruleHint,
     repeatWarning,
     saveDisabled,
+    durationOptions,
     submit,
   }
 }

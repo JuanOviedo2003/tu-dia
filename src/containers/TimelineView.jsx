@@ -3,13 +3,15 @@ import { useDroppable } from '@dnd-kit/core'
 import { assignLanes, tasksForDay } from '../lib/agenda'
 import { MINUTES_PER_DAY, statusMeta } from '../lib/constants'
 import { todayStr } from '../lib/storage'
-import { minutesToLabel } from '../lib/time'
+import { formatDuration, minutesToLabel, normalizeDuration } from '../lib/time'
 import TimelineBlockView from '../components/TimelineBlockView'
 import TimelineTrack from '../components/TimelineTrack'
 import { Draggable } from './Drag'
 
 const PX_PER_MIN = 2
 const BLOCK_HEIGHT = 56
+const MIN_BLOCK_HEIGHT = 28
+const blockHeight = (duration) => (duration ? Math.max(MIN_BLOCK_HEIGHT, duration * PX_PER_MIN) : BLOCK_HEIGHT)
 const HOURS = Array.from({ length: 24 }, (_, h) => ({
   label: minutesToLabel(h * 60),
   top: h * 60 * PX_PER_MIN,
@@ -54,6 +56,8 @@ export default function TimelineView({ dateStr, tasks, actions, isViewer, timeli
       >
         {placed.map(({ task, lane }) => {
           const width = 100 / laneCount
+          const duration = normalizeDuration(task.durationMinutes)
+          const height = blockHeight(duration)
           return (
             <Draggable
               key={task.id}
@@ -67,11 +71,13 @@ export default function TimelineView({ dateStr, tasks, actions, isViewer, timeli
                 }
               }}
               className="absolute"
-              style={{ top: task.startMinutes * PX_PER_MIN, height: BLOCK_HEIGHT, left: `${lane * width}%`, width: `${width - 1}%` }}
+              style={{ top: task.startMinutes * PX_PER_MIN, height, left: `${lane * width}%`, width: `${width - 1}%` }}
             >
               <TimelineBlockView
                 title={task.title}
                 timeLabel={minutesToLabel(task.startMinutes)}
+                durationLabel={duration ? formatDuration(duration) : null}
+                compact={height < BLOCK_HEIGHT}
                 status={statusMeta(task.status)}
                 done={task.status === 'done'}
                 onClick={isViewer ? undefined : () => actions.open(task)}

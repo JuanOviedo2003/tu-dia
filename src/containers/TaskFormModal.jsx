@@ -32,6 +32,7 @@ export default function TaskFormModal({
         isEditing={task.isEditing}
         hasSeries={task.hasSeries}
         seriesCount={groupCount}
+        durationOptions={task.durationOptions}
         saveDisabled={task.saveDisabled}
         onSubmit={task.submit}
         onCancel={onClose}

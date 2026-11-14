@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { MAX_TASKS } from '../lib/constants'
+import { previewCount } from '../lib/recurring'
 
 const CLOSED_MODAL = { open: false, initial: null, defaultDay: null, defaultStatus: 'todo', groupCount: 0 }
 
@@ -57,17 +59,36 @@ export function useTaskActions({ api, isViewer, isMobile, selectedDay, toast }) 
     toast.show(`Serie eliminada (${removed.length} tareas)`, () => removed.forEach((t) => addTask(withoutIdentity(t))))
   })
 
-  const quickCreate = editable((data, repeatOpts) => {
+  const createOne = ({ data, repeatOpts }) => {
     if (repeatOpts) {
       const created = addRecurringTasks(data, repeatOpts)
-      if (created.length > 0) {
-        const groupId = created[0].groupId
-        toast.show(`Serie creada (${created.length} tareas)`, () => removeAllInGroup(groupId))
-      }
-      return
+      const groupId = created[0]?.groupId
+      return { created, series: true, undo: () => groupId && removeAllInGroup(groupId) }
     }
     const task = addTask(data)
-    toast.show('Tarea creada', () => removeTask(task.id))
+    return { created: [task], series: false, undo: () => removeTask(task.id) }
+  }
+
+  const quickCreate = editable((entries, { ignored = 0 } = {}) => {
+    const incoming = entries.reduce(
+      (sum, { data, repeatOpts }) => sum + (repeatOpts ? previewCount(data.day, repeatOpts.pattern, repeatOpts.months) : 1),
+      0,
+    )
+    const missing = tasks.length + incoming - MAX_TASKS
+    if (missing > 0) {
+      toast.show(`No cabe: máximo ${MAX_TASKS} tareas (te faltan ${missing} de espacio)`, null)
+      return false
+    }
+    const results = entries.map(createOne).filter((r) => r.created.length > 0)
+    if (results.length === 0) return
+    const suffix = ignored > 0 ? ` · ${ignored} ${ignored === 1 ? 'línea ignorada' : 'líneas ignoradas'}` : ''
+    if (results.length > 1) {
+      toast.show(`${results.length} tareas creadas${suffix}`, () => results.forEach((r) => r.undo()))
+      return
+    }
+    const [{ created, series, undo }] = results
+    if (series) toast.show(`Serie creada (${created.length} tareas)${suffix}`, undo)
+    else toast.show(`Tarea creada${suffix}`, undo, [{ label: 'Editar', onClick: () => openEdit(created[0]) }])
   })
 
   const sheetTask = sheetId ? tasks.find((t) => t.id === sheetId) ?? null : null

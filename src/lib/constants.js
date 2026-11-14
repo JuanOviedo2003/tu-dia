@@ -18,7 +18,10 @@ export function statusByShortcut(char) {
 export const MINUTES_PER_DAY = 1440
 export const DEFAULT_START_MINUTES = 9 * 60
 export const DEFAULT_REPEAT_MONTHS = 6
+export const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240]
 
+export const MAX_TASKS = 500
+export const MAX_QUICK_ADD_LINES = 20
 export const MAX_VIEWERS = 10
 export const MAX_NAME_LENGTH = 40
 export const NAME_REQUIRED_ERROR = 'Escribe tu nombre para continuar.'
@@ -35,4 +38,11 @@ export const VIEWS = [
 export function uid() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID()
   return 'id-' + Math.random().toString(36).slice(2) + Date.now().toString(36)
+}
+
+export const QUICK_ADD_DOUBT_LABELS = {
+  'time-without-meridiem': '¿Hora PM?',
+  'ambiguous-date': '¿Qué mes?',
+  'duration-ignored': 'Duración ignorada',
+  'title-empty': 'Falta el título',
 }
