@@ -53,7 +53,7 @@ async function checkHosting() {
 //    No valida permisos ni datos: solo que la API este viva.
 async function checkFirestore() {
   if (!args.firestore) return
-  const url = `https://firestore.googleapis.com/v1/projects/${args.firestore}/databases/(default)/documents`
+  const url = `https://firestore.googleapis.com/v1/projects/${args.firestore}/databases/(default)/documents/rooms`
   try {
     const res = await fetchWithTimeout(url, Number(args.timeout))
     if (res.status === 401 || res.status === 403 || res.status === 200) {
