@@ -24,7 +24,8 @@ globalThis.localStorage = {
 }
 
 const modPath = path.resolve(import.meta.dirname, '../src/lib/quickAdd.js')
-const { parseQuickAdd, parseQuickAddLines, splitQuickAddLines, highlightSegments } = await import(pathToFileURL(modPath).href)
+const { parseQuickAdd, parseQuickAddLines, splitQuickAddLines, highlightSegments, tidyTitle } = await import(pathToFileURL(modPath).href)
+const { habitFor, templateFor } = await import(pathToFileURL(path.resolve(import.meta.dirname, '../src/lib/habits.js')).href)
 
 
 const pad = (n) => String(n).padStart(2, '0')
@@ -184,6 +185,53 @@ rows.push({
   ok: dayOnly.title === 'pagar' && rolledOver === passedThisMonth && dayOnly.doubts.includes('ambiguous-date') === passedThisMonth,
   detail: JSON.stringify(dayOnly),
 })
+
+const tidyCases = [
+  ['  reunión   con ana  ', 'Reunión con ana'],
+  ['llamar\n\na   Ana', 'Llamar a Ana'],
+  ['ñandú al horno', 'Ñandú al horno'],
+  ['Ya Capitalizado', 'Ya Capitalizado'],
+  ['pagar iPhone', 'Pagar iPhone'],
+  ['3 reuniones', '3 reuniones'],
+  ['¿qué hacer?', '¿qué hacer?'],
+  ['😀 fiesta', '😀 fiesta'],
+  ['https://ejemplo.com/a', 'https://ejemplo.com/a'],
+  ['www.ejemplo.com', 'www.ejemplo.com'],
+  ['', ''],
+  ['   ', ''],
+]
+for (const [input, expected] of tidyCases) {
+  const got = tidyTitle(input)
+  rows.push({ name: `tidyTitle ${JSON.stringify(input)}`, ok: got === expected, detail: `esperado ${JSON.stringify(expected)}, obtuvo ${JSON.stringify(got)}` })
+}
+
+const hTask = (title, startMinutes, durationMinutes, updatedAt, day = TODAY) => ({ title, day, startMinutes, durationMinutes, updatedAt, status: 'todo' })
+const habitCases = [
+  ['habitFor una sola tarea no es habito', [hTask('Gimnasio', 420, 60, 1)], 'gimnasio', null],
+  ['habitFor dos tareas misma hora', [hTask('Gimnasio', 420, 60, 1), hTask('gimnasio ', 420, 60, 2)], 'Gimnasio', { startMinutes: 420, durationMinutes: 60 }],
+  ['habitFor ignora acentos y mayusculas', [hTask('Reunión', 600, null, 1), hTask('REUNION', 600, null, 2)], 'reunión', { startMinutes: 600, durationMinutes: null }],
+  ['habitFor excluye tareas sin dia', [hTask('Yoga', 1080, 60, 1), hTask('Yoga', 1080, 60, 2, null)], 'yoga', null],
+  ['habitFor la moda gana', [hTask('Yoga', 1080, 60, 1), hTask('Yoga', 1080, 60, 2), hTask('Yoga', 540, 60, 9)], 'yoga', { startMinutes: 1080, durationMinutes: 60 }],
+  ['habitFor empate gana la mas reciente', [hTask('Yoga', 1080, null, 1), hTask('Yoga', 1080, null, 2), hTask('Yoga', 540, null, 8), hTask('Yoga', 540, null, 9)], 'yoga', { startMinutes: 540, durationMinutes: null }],
+  ['habitFor sin moda repetida no sugiere', [hTask('Yoga', 1080, 30, 1), hTask('Yoga', 540, 60, 2)], 'yoga', null],
+  ['habitFor titulo distinto', [hTask('Gimnasio', 420, 60, 1), hTask('Gimnasio', 420, 60, 2)], 'gimnasio pesas', null],
+  ['habitFor una serie de 12 no es habito', Array.from({ length: 12 }, (_, i) => ({ ...hTask('Gimnasio', 420, 60, i + 1), groupId: 'g1' })), 'gimnasio', null],
+  ['habitFor serie cuenta como una mas otra tarea', [...Array.from({ length: 12 }, (_, i) => ({ ...hTask('Gimnasio', 420, 60, i + 1), groupId: 'g1' })), hTask('Gimnasio', 420, 60, 20)], 'gimnasio', { startMinutes: 420, durationMinutes: 60 }],
+  ['habitFor titulo vacio', [hTask('Gimnasio', 420, 60, 1), hTask('Gimnasio', 420, 60, 2)], '  ', null],
+]
+for (const [name, tasks, title, expected] of habitCases) {
+  const got = habitFor(tasks, title)
+  rows.push({ name, ok: same(got, expected), detail: `esperado ${JSON.stringify(expected)}, obtuvo ${JSON.stringify(got)}` })
+}
+
+const tplDone = templateFor([{ ...hTask('Gimnasio', 420, 60, 1), status: 'done' }], 'gimnasio')
+rows.push({ name: 'templateFor copia hora y duracion y no el estado done', ok: same(tplDone, { startMinutes: 420, durationMinutes: 60 }), detail: JSON.stringify(tplDone) })
+const tplDoing = templateFor([{ ...hTask('Gimnasio', 420, 60, 1), status: 'inprogress' }], 'gimnasio')
+rows.push({ name: 'templateFor copia estado no done', ok: same(tplDoing, { startMinutes: 420, durationMinutes: 60, status: 'inprogress' }), detail: JSON.stringify(tplDoing) })
+const tplNoDay = templateFor([hTask('Gimnasio', 420, 60, 1, null)], 'gimnasio')
+rows.push({ name: 'templateFor sin dia no copia hora', ok: same(tplNoDay, { durationMinutes: 60 }), detail: JSON.stringify(tplNoDay) })
+const tplLatest = templateFor([hTask('Gimnasio', 420, 60, 1), hTask('Gimnasio', 480, 90, 5)], 'gimnasio')
+rows.push({ name: 'templateFor usa la mas reciente', ok: same(tplLatest, { startMinutes: 480, durationMinutes: 90 }), detail: JSON.stringify(tplLatest) })
 
 let failures = 0
 for (const [i, r] of rows.entries()) {

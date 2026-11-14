@@ -410,6 +410,16 @@ export function parseQuickAdd(raw, refDate = new Date()) {
   }
 }
 
+const URL_START_RE = /^(?:[a-z][a-z0-9+.-]*:\/\/|www\.)/i
+
+export function tidyTitle(raw) {
+  const title = (raw || '').replace(/\s+/g, ' ').trim()
+  const [first] = title
+  if (!first || !/^\p{Ll}$/u.test(first) || URL_START_RE.test(title)) return title
+  const upper = first.toUpperCase()
+  return upper.length === first.length ? upper + title.slice(first.length) : title
+}
+
 export function splitQuickAddLines(raw) {
   return (raw || '')
     .split(/\r?\n/)

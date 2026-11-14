@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 import { useQuickAdd } from '../hooks/useQuickAdd'
+import { useSpeechInput } from '../hooks/useSpeechInput'
 import QuickAddBarView from '../components/QuickAddBarView'
 
 const PLACEHOLDERS = {
@@ -10,9 +11,10 @@ const MAX_LINES = 5
 const FALLBACK_LINE_HEIGHT = 24
 
 export default function QuickAdd({ defaultDay, tasks, onCreate, size = 'desktop', inputRef }) {
-  const quick = useQuickAdd({ defaultDay, tasks, onCreate })
   const localRef = useRef(null)
   const fieldRef = inputRef ?? localRef
+  const quick = useQuickAdd({ defaultDay, tasks, onCreate, onFieldSelected: () => fieldRef.current?.focus() })
+  const speech = useSpeechInput({ text: quick.text, onText: quick.setText })
   const backdropRef = useRef(null)
 
   useLayoutEffect(() => {
@@ -23,8 +25,33 @@ export default function QuickAdd({ defaultDay, tasks, onCreate, size = 'desktop'
     el.style.height = `${Math.min(el.scrollHeight, lineHeight * MAX_LINES)}px`
   }, [quick.text, fieldRef])
 
+  const submit = (keepOpen = false) => {
+    speech.cancel()
+    quick.submit(keepOpen)
+    if (keepOpen) fieldRef.current?.focus()
+  }
+
+  const onRootKeyDown = (e) => {
+    if (e.nativeEvent.isComposing) return
+    if (e.key === 'Escape' && speech.listening) {
+      e.preventDefault()
+      e.stopPropagation()
+      speech.stop()
+      return
+    }
+    if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || !quick.card) return
+    const match = /^Digit([1-5])$/.exec(e.code)
+    const field = match && e.key === match[1] && quick.card.fields[Number(match[1]) - 1]
+    if (!field) return
+    e.preventDefault()
+    const closing = quick.card.openField === field.key
+    quick.card.onOpenField(closing ? null : field.key)
+    if (closing) fieldRef.current?.focus()
+  }
+
   const onKeyDown = (e) => {
     if (e.nativeEvent.isComposing) return
+    if (e.key === 'Escape' && speech.listening) return
     const { items, activeIndex } = quick.suggestions
     const listOpen = items.length > 0
     if (listOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -36,7 +63,7 @@ export default function QuickAdd({ defaultDay, tasks, onCreate, size = 'desktop'
       quick.pick(activeIndex)
     } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      quick.submit()
+      submit(e.ctrlKey || e.metaKey)
     } else if (e.key === 'Escape') {
       if (listOpen) {
         e.stopPropagation()
@@ -54,7 +81,10 @@ export default function QuickAdd({ defaultDay, tasks, onCreate, size = 'desktop'
       text={quick.text}
       segments={quick.segments}
       onTextChange={quick.setText}
-      onSubmit={quick.canCreate ? quick.submit : () => fieldRef.current?.focus()}
+      onSubmit={() => (quick.canCreate ? submit(false) : fieldRef.current?.focus())}
+      onSubmitKeep={() => submit(true)}
+      onRootKeyDown={onRootKeyDown}
+      speech={speech.supported ? speech : null}
       onKeyDown={onKeyDown}
       inputRef={fieldRef}
       backdropRef={backdropRef}

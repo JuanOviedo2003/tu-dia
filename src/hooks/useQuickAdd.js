@@ -1,9 +1,19 @@
 import { useCallback, useId, useMemo, useState } from 'react'
-import { highlightSegments, parseQuickAddLines, splitQuickAddLines } from '../lib/quickAdd'
-import { addDays, formatDayChip, suggestTitles } from '../lib/agenda'
+import { highlightSegments, parseQuickAddLines, splitQuickAddLines, tidyTitle } from '../lib/quickAdd'
+import {
+  addDays,
+  dayLoad,
+  dayLoadText,
+  formatDayChip,
+  groupByDay,
+  suggestTitles,
+  unscheduledLoadText,
+} from '../lib/agenda'
+import { buildTitleIndex, titleKey } from '../lib/habits'
 import { formatDuration, labelToMinutes, minutesToLabel } from '../lib/time'
 import {
   DEFAULT_REPEAT_MONTHS,
+  DEFAULT_START_MINUTES,
   DURATION_OPTIONS,
   MAX_QUICK_ADD_LINES,
   QUICK_ADD_DOUBT_LABELS,
@@ -42,15 +52,41 @@ function dayLabel(day) {
   return formatDayChip(day)
 }
 
-function toEntry(source, defaultDay, overrides) {
+const wroteTime = (source) => source.spans.some((s) => s.kind === 'time') || source.startMinutes !== DEFAULT_START_MINUTES
+
+function habitDefaults(source, habit, skipped) {
+  const out = {}
+  if (!habit) return out
+  if (habit.startMinutes !== null && !source.unscheduled && !wroteTime(source) && !skipped('startMinutes')) {
+    out.startMinutes = habit.startMinutes
+  }
+  if (
+    habit.durationMinutes !== null &&
+    source.durationMinutes === null &&
+    !source.doubts.includes('duration-ignored') &&
+    !skipped('durationMinutes')
+  ) {
+    out.durationMinutes = habit.durationMinutes
+  }
+  return out
+}
+
+function toEntry(source, defaultDay, overrides, habit) {
+  const applied = { ...habit, ...overrides }
   const parsed = {
     ...source,
-    ...overrides,
-    doubts: source.doubts.filter((d) => !(DOUBT_FIELD[d] in overrides)),
+    ...applied,
+    doubts: source.doubts.filter((d) => !(DOUBT_FIELD[d] in applied)),
   }
   const day = 'day' in overrides ? overrides.day : source.unscheduled ? null : source.day ?? defaultDay ?? null
   const ok = parsed.title.length > 0 && (parsed.repeat === 'none' || Boolean(day))
-  return { parsed, day, ok }
+  return { parsed, day, ok, habitKeys: Object.keys(habit), wroteTime: wroteTime(source) }
+}
+
+function buildLoad({ parsed, day }, dayTasks, explicitStart, unscheduledCount) {
+  if (!day) return { text: unscheduledLoadText(unscheduledCount), busy: false, clash: null }
+  const load = dayLoad(dayTasks, day, explicitStart ? parsed.startMinutes : null)
+  return { text: dayLoadText(dayLabel(day), load), busy: load.busy, clash: load.clash?.title ?? null }
 }
 
 function describe({ parsed, day }) {
@@ -63,7 +99,7 @@ function describe({ parsed, day }) {
 
 function toCreation({ parsed, day }) {
   const data = {
-    title: parsed.title,
+    title: tidyTitle(parsed.title),
     description: '',
     day,
     startMinutes: parsed.startMinutes,
@@ -73,14 +109,14 @@ function toCreation({ parsed, day }) {
   return { data, repeatOpts: parsed.repeat !== 'none' ? { pattern: parsed.repeat, months: DEFAULT_REPEAT_MONTHS } : null }
 }
 
-function fieldOptions(key, options, current, edited) {
-  return { key, name: FIELD_NAMES[key], value: current, edited, options: edited ? [...options, RESET_OPTION] : options }
+function fieldOptions(key, options, current, origin) {
+  return { key, name: FIELD_NAMES[key], value: current, origin, options: origin ? [...options, RESET_OPTION] : options }
 }
 
-function buildCard({ parsed, day }, overrides, { select, openField, setOpenField }) {
+function buildCard(entry, dayTasks, unscheduledCount, edited, { select, openField, setOpenField }) {
+  const { parsed, day } = entry
   const today = todayStr()
   const meta = statusMeta(parsed.status)
-  const edited = (key) => key in overrides
   const pick = (key) => (value) => select(key, value)
   const dayOptions = [
     { value: today, label: 'Hoy' },
@@ -141,26 +177,42 @@ function buildCard({ parsed, day }, overrides, { select, openField, setOpenField
     needsDay: parsed.repeat !== 'none' && !day,
     fields,
     doubts: describe({ parsed, day }).doubts.filter((d) => d !== TITLE_EMPTY_LABEL),
+    load: buildLoad(entry, dayTasks, edited('startMinutes') === 'edited' || (entry.wroteTime && edited('startMinutes') !== 'template'), unscheduledCount),
     openField,
     onOpenField: setOpenField,
   }
 }
 
-export function useQuickAdd({ defaultDay, tasks = NO_TASKS, onCreate }) {
+export function useQuickAdd({ defaultDay, tasks = NO_TASKS, onCreate, onFieldSelected }) {
   const listId = useId()
   const [text, setTextState] = useState('')
   const [activeIndex, setActiveIndex] = useState(-1)
   const [listClosed, setListClosed] = useState(false)
 
   const [overrides, setOverrides] = useState(NO_OVERRIDES)
+  const [templateState, setTemplateState] = useState(null)
+  const [dismissed, setDismissed] = useState(NO_TASKS)
   const [openField, setOpenField] = useState(null)
 
   const parsedLines = useMemo(() => parseQuickAddLines(text), [text])
   const segments = useMemo(() => highlightSegments(text, parsedLines), [text, parsedLines])
-  const entries = useMemo(() => {
-    const applied = parsedLines.length === 1 ? overrides : NO_OVERRIDES
-    return parsedLines.map((p) => toEntry(p, defaultDay, applied))
-  }, [parsedLines, defaultDay, overrides])
+  const single = parsedLines.length === 1
+  const manual = single ? overrides : NO_OVERRIDES
+  const template = single && templateState?.key === titleKey(parsedLines[0].title) ? templateState.values : NO_OVERRIDES
+  const titleIndex = useMemo(() => buildTitleIndex(tasks), [tasks])
+  const byDay = useMemo(() => groupByDay(tasks), [tasks])
+  const unscheduledCount = useMemo(() => tasks.reduce((n, t) => (t.day ? n : n + 1), 0), [tasks])
+  const entries = useMemo(
+    () =>
+      parsedLines.map((p) => {
+        const { startMinutes: _skipped, ...timeless } = template
+        const applied = { ...(p.unscheduled ? timeless : template), ...manual }
+        const habit = habitDefaults(p, titleIndex.get(titleKey(p.title))?.habit ?? null, (key) => key in applied || dismissed.includes(key))
+        return toEntry(p, defaultDay, applied, habit)
+      }),
+    [parsedLines, defaultDay, manual, template, titleIndex, dismissed],
+  )
+  const origin = (key) => (key in manual ? 'edited' : key in template && !(key === 'startMinutes' && entries[0]?.parsed.unscheduled) ? 'template' : entries[0]?.habitKeys.includes(key) ? 'habit' : null)
   const valid = useMemo(() => entries.filter((e) => e.ok), [entries])
   const canCreate = valid.length > 0
   const totalLines = useMemo(() => splitQuickAddLines(text).length, [text])
@@ -178,14 +230,20 @@ export function useQuickAdd({ defaultDay, tasks = NO_TASKS, onCreate }) {
     setListClosed(false)
     if (!value.trim()) {
       setOverrides(NO_OVERRIDES)
+      setTemplateState(null)
+      setDismissed(NO_TASKS)
       setOpenField(null)
     }
   }, [])
 
   const select = (key, value) => {
     setOpenField(null)
+    onFieldSelected?.()
     if (value === RESET) {
-      setOverrides(({ [key]: _removed, ...rest }) => rest)
+      const without = ({ [key]: _removed, ...rest }) => rest
+      setOverrides(without)
+      setTemplateState((t) => t && { ...t, values: without(t.values) })
+      if (entries[0]?.habitKeys.includes(key)) setDismissed((d) => [...d, key])
       return
     }
     const next = { [key]: value }
@@ -193,7 +251,7 @@ export function useQuickAdd({ defaultDay, tasks = NO_TASKS, onCreate }) {
     setOverrides((current) => ({ ...current, ...next }))
   }
 
-  const card = entries.length === 1 ? buildCard(entries[0], overrides, { select, openField, setOpenField }) : null
+  const card = entries.length === 1 ? buildCard(entries[0], byDay.get(entries[0].day) ?? NO_TASKS, unscheduledCount, origin, { select, openField, setOpenField }) : null
 
   const preview =
     entries.length > 1
@@ -218,10 +276,10 @@ export function useQuickAdd({ defaultDay, tasks = NO_TASKS, onCreate }) {
 
   const reset = () => setText('')
 
-  const submit = () => {
+  const submit = (keepOpen = false) => {
     if (!canCreate) return
     const ignored = totalLines - valid.length
-    if (onCreate(valid.map(toCreation), { ignored }) !== false) reset()
+    if (onCreate(valid.map(toCreation), { ignored, keepOpen }) !== false) reset()
   }
 
   const moveActive = (delta) => {
@@ -233,6 +291,10 @@ export function useQuickAdd({ defaultDay, tasks = NO_TASKS, onCreate }) {
     const title = suggestions[index]
     if (!title) return
     setText([...lines.slice(0, -1), title].join('\n'))
+    if (lines.length === 1) {
+      const values = titleIndex.get(titleKey(title))?.template ?? NO_OVERRIDES
+      setTemplateState(Object.keys(values).length > 0 ? { key: titleKey(title), values } : null)
+    }
   }
 
   const closeList = () => setListClosed(true)

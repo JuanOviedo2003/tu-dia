@@ -62,7 +62,7 @@ function killServer(child) {
   }
 }
 
-async function newPage(browser, { viewport = DESKTOP, profile = 'Test', tasks = [] } = {}) {
+async function newPage(browser, { viewport = DESKTOP, profile = 'Test', tasks = [], init = null } = {}) {
   const context = await browser.newContext({ viewport, serviceWorkers: 'block' });
   await context.clock.setFixedTime(FIXED_NOW);
   await context.route(/(googleapis\.com|firebaseio\.com|firebaseapp\.com|gstatic\.com\/firebasejs)/, (route) =>
@@ -75,6 +75,7 @@ async function newPage(browser, { viewport = DESKTOP, profile = 'Test', tasks = 
     },
     { profile, tasks },
   );
+  if (init) await context.addInitScript(init);
   const page = await context.newPage();
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
@@ -175,6 +176,56 @@ async function suggestion(page) {
   await input.press('Tab');
   assert((await input.inputValue()) === 'Comprar leche', `valor tras Tab: ${await input.inputValue()}`);
   assert((await page.getByRole('option').count()) === 0, 'la lista sigue abierta tras aceptar');
+}
+
+function timedTask(title, day, startMinutes, durationMinutes) {
+  return { ...task(title, day, 'todo'), startMinutes, durationMinutes };
+}
+
+async function templateFromSuggestion(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('gim');
+  await page.getByRole('option', { name: 'Gimnasio' }).waitFor();
+  await input.press('ArrowDown');
+  await input.press('Tab');
+  await page.getByRole('button', { name: /^Hora: 07:00 \(desde una tarea anterior\)/ }).waitFor();
+  await page.getByRole('button', { name: /^Duración: 1 h \(desde una tarea anterior\)/ }).waitFor();
+  await page.getByRole('button', { name: /^Hora: /, hasText: '07:00' }).click();
+  await page.getByRole('menuitemradio', { name: 'Volver a lo escrito' }).click();
+  await page.getByRole('button', { name: /^Hora: 09:00$/ }).waitFor();
+}
+
+async function habitApplied(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('yoga');
+  await page.getByRole('button', { name: /^Hora: 18:00 \(habitual\)/ }).waitFor();
+  await input.press('Enter');
+  await page.getByRole('status').filter({ hasText: 'Tarea creada' }).waitFor();
+  const created = (await storedTasks(page)).find((t) => t.title === 'Yoga' && t.day === dayStr(0));
+  assert(created && created.startMinutes === 18 * 60, `hora del hábito: ${created && created.startMinutes}`);
+  await input.fill('yoga 8am');
+  await page.getByRole('button', { name: /^Hora: 08:00$/ }).waitFor();
+}
+
+async function tidyOnCreate(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('  reunión   con ana  ');
+  await input.press('Enter');
+  await page.getByRole('status').filter({ hasText: 'Tarea creada' }).waitFor();
+  const titles = (await storedTasks(page)).map((t) => t.title);
+  assert(titles.includes('Reunión con ana'), `títulos: ${JSON.stringify(titles)}`);
+}
+
+async function dayLoadLine(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('algo');
+  await page.getByText('Hoy ya tiene 6 tareas', { exact: true }).waitFor();
+  await page.getByText('Día cargado', { exact: true }).waitFor();
+  await input.fill('cita hoy 10am');
+  await page.getByText('A esa hora ya está: Dentista', { exact: true }).waitFor();
+  await input.fill('algo sin programar');
+  await page.getByText('Aún no hay tareas sin programar', { exact: true }).waitFor();
+  assert((await page.getByText('Día cargado', { exact: true }).count()) === 0, 'Día cargado en Sin programar');
 }
 
 async function highlight(page) {
@@ -293,7 +344,7 @@ async function editDayChip(page) {
   await page.getByRole('button', { name: /^Día: .*\(editado\)/ }).waitFor();
   await page.getByRole('button', { name: 'Añadir', exact: true }).click();
   await page.getByRole('status').filter({ hasText: 'Tarea creada' }).waitFor();
-  const created = (await storedTasks(page)).find((t) => t.title.startsWith('reunión'));
+  const created = (await storedTasks(page)).find((t) => t.title.toLowerCase().startsWith('reunión'));
   assert(created && created.day === dayStr(2), `día de la tarea: ${created && created.day}`);
 }
 
@@ -349,6 +400,141 @@ async function customTimeKeyboard(page) {
   assert((await page.getByRole('menu').count()) === 1, 'Tab cerró el menú');
 }
 
+const NO_SPEECH = () => {
+  delete window.SpeechRecognition;
+  delete window.webkitSpeechRecognition;
+};
+
+const MOCK_SPEECH = () => {
+  const Mock = class {
+    start() {
+      window.__rec = this;
+    }
+    stop() {
+      if (this.onend) this.onend();
+    }
+    abort() {}
+  };
+  window.SpeechRecognition = Mock;
+  window.webkitSpeechRecognition = Mock;
+};
+
+async function shortcutDuration(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('Informe final');
+  await input.focus();
+  await page.keyboard.press('Alt+Digit3');
+  const menu = page.getByRole('menu', { name: 'Duración' });
+  await menu.waitFor();
+  assert((await page.getByRole('button', { name: /^Duración: / }).getAttribute('aria-keyshortcuts')) === 'Alt+3', 'sin aria-keyshortcuts');
+  await page.getByRole('menuitemradio', { name: '1 h', exact: true }).focus();
+  await page.keyboard.press('Enter');
+  await menu.waitFor({ state: 'detached' });
+  assert(await page.evaluate(() => document.activeElement?.id === 'quick-add-input'), 'el foco no volvió al campo');
+  await page.keyboard.press('Alt+Digit3');
+  await menu.waitFor();
+  await page.keyboard.press('Alt+Digit3');
+  await menu.waitFor({ state: 'detached' });
+  assert(await page.evaluate(() => document.activeElement?.id === 'quick-add-input'), 'el foco no volvió al cerrar con Alt+3');
+  await input.press('Enter');
+  await page.getByRole('status').filter({ hasText: 'Tarea creada' }).waitFor();
+  const created = (await storedTasks(page)).find((t) => t.title === 'Informe final');
+  assert(created && created.durationMinutes === 60, `duración: ${created && created.durationMinutes}`);
+}
+
+async function createAndKeep(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('Primera seguida');
+  await page.getByText('Ctrl+Enter: crear y seguir', { exact: true }).waitFor();
+  await input.press('Control+Enter');
+  await page.getByRole('status').filter({ hasText: 'Tarea creada' }).waitFor();
+  assert((await input.inputValue()) === '', 'el campo no quedó vacío');
+  assert(await page.evaluate(() => document.activeElement?.id === 'quick-add-input'), 'el campo perdió el foco');
+  assert((await page.getByText('Ctrl+Enter: crear y seguir', { exact: true }).count()) === 0, 'ayuda visible sin texto');
+  assert((await storedTasks(page)).some((t) => t.title === 'Primera seguida'), 'tarea no creada');
+}
+
+async function createAndKeepMobile(page) {
+  await page.getByRole('navigation', { name: 'Navegación principal' }).getByRole('button', { name: 'Añadir tarea', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.waitFor();
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('Seguida uno');
+  await input.press('Control+Enter');
+  await page.getByRole('status').filter({ hasText: 'Tarea creada' }).waitFor();
+  assert((await dialog.count()) === 1, 'la hoja se cerró con Ctrl+Enter');
+  assert((await input.inputValue()) === '', 'el campo no quedó vacío');
+  await input.fill('Seguida dos');
+  await page.getByRole('button', { name: 'Crear y seguir', exact: true }).click();
+  await page.waitForFunction(() => document.getElementById('quick-add-input')?.value === '');
+  assert((await dialog.count()) === 1, 'la hoja se cerró con el botón');
+  await input.fill('Cierre');
+  await input.press('Enter');
+  await dialog.waitFor({ state: 'detached' });
+  const titles = (await storedTasks(page)).map((t) => t.title);
+  for (const title of ['Seguida uno', 'Seguida dos', 'Cierre']) assert(titles.includes(title), `falta ${title}`);
+}
+
+async function voiceAbsent(page) {
+  await page.getByLabel('Añadir tarea rápida').waitFor();
+  assert((await page.getByRole('button', { name: /^Dictar/ }).count()) === 0, 'botón de voz sin soporte');
+}
+
+async function voiceMock(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('Llamar');
+  const mic = page.getByRole('button', { name: /^Dictar/ });
+  await mic.waitFor();
+  assert((await mic.getAttribute('aria-label')).includes('servicio de voz'), 'sin aviso de privacidad');
+  assert((await mic.getAttribute('aria-pressed')) === 'false', 'aria-pressed inicial');
+  await mic.click();
+  const stop = page.getByRole('button', { name: 'Detener dictado' });
+  await stop.waitFor();
+  assert((await stop.getAttribute('aria-pressed')) === 'true', 'aria-pressed al dictar');
+  await page.evaluate(() => window.__rec.onresult({ results: [[{ transcript: 'a Ana' }]] }));
+  assert((await input.inputValue()) === 'Llamar a Ana', `texto provisional: ${await input.inputValue()}`);
+  await page.evaluate(() => window.__rec.onresult({ results: [[{ transcript: 'a Ana mañana' }]] }));
+  assert((await input.inputValue()) === 'Llamar a Ana mañana', `texto final: ${await input.inputValue()}`);
+  await stop.click();
+  const idle = page.getByRole('button', { name: /^Dictar/ });
+  await idle.waitFor();
+  assert((await idle.getAttribute('aria-pressed')) === 'false', 'aria-pressed tras detener');
+  await page.getByRole('button', { name: /^Día: Mañana/ }).waitFor();
+  await idle.click();
+  await page.evaluate(() => window.__rec.onerror({ error: 'not-allowed' }));
+  await page.getByRole('status').filter({ hasText: 'No se pudo usar el micrófono' }).waitFor();
+}
+
+async function voiceSubmit(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.focus();
+  await page.getByRole('button', { name: /^Dictar/ }).click();
+  await page.getByRole('button', { name: 'Detener dictado' }).waitFor();
+  await page.evaluate(() => {
+    window.__late = window.__rec.onresult;
+    window.__rec.onresult({ results: [[{ transcript: 'comprar pan' }]] });
+  });
+  assert((await input.inputValue()) === 'comprar pan', `dictado: ${await input.inputValue()}`);
+  await input.press('Enter');
+  await page.getByRole('status').filter({ hasText: 'Tarea creada' }).waitFor();
+  await page.evaluate(() => window.__late({ results: [[{ transcript: 'comprar pan' }]] }));
+  assert((await input.inputValue()) === '', `campo tras enviar: ${await input.inputValue()}`);
+  const count = (await storedTasks(page)).filter((t) => t.title.toLowerCase() === 'comprar pan').length;
+  assert(count === 1, `tareas duplicadas: ${count}`);
+}
+
+async function shortcutLayoutKey(page) {
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('Informe final');
+  await input.focus();
+  await page.evaluate(() => {
+    document.getElementById('quick-add-input').dispatchEvent(
+      new KeyboardEvent('keydown', { key: '|', code: 'Digit1', altKey: true, bubbles: true, cancelable: true }),
+    );
+  });
+  assert((await page.getByRole('menu').count()) === 0, 'Alt con símbolo abrió el menú');
+}
+
 async function main() {
   let server;
   let browser;
@@ -390,6 +576,32 @@ async function main() {
       await highlight(page);
     });
     await runCase(browser, '6. Sugerencia de título', { tasks: [task('Comprar leche', dayStr(0), 'done')] }, suggestion);
+    await runCase(browser, '13. Plantilla desde sugerencia', { tasks: [timedTask('Gimnasio', dayStr(-1), 420, 60)] }, templateFromSuggestion);
+    await runCase(
+      browser,
+      '14. Hábito aplicado',
+      { tasks: [timedTask('Yoga', dayStr(-1), 1080, null), timedTask('Yoga', dayStr(-2), 1080, null)] },
+      habitApplied,
+    );
+    await runCase(browser, '15. Título corregido al crear', {}, tidyOnCreate);
+    await runCase(
+      browser,
+      '16. Carga del día',
+      {
+        tasks: [
+          timedTask('Dentista', dayStr(0), 600, null),
+          ...Array.from({ length: 5 }, (_, i) => timedTask(`Tarea ${i}`, dayStr(0), 700 + i * 30, null)),
+        ],
+      },
+      dayLoadLine,
+    );
+    await runCase(browser, '17. Atajo Alt+3 en duración', {}, shortcutDuration);
+    await runCase(browser, '18. Crear y seguir en escritorio', {}, createAndKeep);
+    await runCase(browser, '19. Crear y seguir en la hoja móvil', { viewport: MOBILE }, createAndKeepMobile);
+    await runCase(browser, '20. Voz: sin soporte no hay botón', { init: NO_SPEECH }, voiceAbsent);
+    await runCase(browser, '21. Voz: con mock anexa texto', { init: MOCK_SPEECH }, voiceMock);
+    await runCase(browser, '22. Voz: enviar no duplica texto', { init: MOCK_SPEECH }, voiceSubmit);
+    await runCase(browser, '23. Alt+símbolo no abre menú', {}, shortcutLayoutKey);
   } catch (error) {
     results.push({ name: 'ejecución sin excepciones', ok: false, detail: error && error.message ? error.message : String(error) });
   } finally {

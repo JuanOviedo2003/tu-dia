@@ -22,6 +22,7 @@ export const DURATION_OPTIONS = [15, 30, 45, 60, 90, 120, 180, 240]
 
 export const MAX_TASKS = 500
 export const MAX_QUICK_ADD_LINES = 20
+export const BUSY_DAY_TASKS = 6
 export const MAX_VIEWERS = 10
 export const MAX_NAME_LENGTH = 40
 export const NAME_REQUIRED_ERROR = 'Escribe tu nombre para continuar.'

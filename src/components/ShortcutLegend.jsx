@@ -5,6 +5,8 @@ const ITEMS = [
   [['←', '→'], 'cambiar de día'],
   [['T'], 'hoy'],
   [['1', '2', '3', '4'], 'mover tarjeta con foco'],
+  [['Alt+1…5'], 'editar día, hora, duración, estado, repetición en la captura'],
+  [['Ctrl+Enter'], 'crear y seguir'],
   [['Enter'], 'abrir'],
   [['Esc'], 'cerrar'],
 ]

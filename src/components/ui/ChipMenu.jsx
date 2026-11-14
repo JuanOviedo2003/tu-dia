@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cx } from '../../lib/cx'
+import Kbd from './Kbd'
 
 const GAP = 4
 const MARGIN = 8
@@ -24,7 +25,7 @@ function place(anchor, menu) {
   return { top, left, maxHeight: space }
 }
 
-export default function ChipMenu({ open, label, options, value, onSelect, onClose, anchorRef, extra }) {
+export default function ChipMenu({ open, label, options, value, onSelect, onClose, anchorRef, extra, hint }) {
   const menuRef = useRef(null)
   const [pos, setPos] = useState(null)
   const closer = useRef(onClose)
@@ -108,6 +109,11 @@ export default function ChipMenu({ open, label, options, value, onSelect, onClos
       style={pos ?? { top: 0, left: 0, opacity: 0 }}
       className="fixed z-[60] min-w-48 overflow-y-auto rounded-md border border-line bg-s2 py-1 shadow-menu"
     >
+      {hint && (
+        <div aria-hidden="true" className="flex items-center justify-end px-3 pb-1">
+          <Kbd>{hint}</Kbd>
+        </div>
+      )}
       {options.map((option) => {
         const checked = option.value === value
         return (

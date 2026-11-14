@@ -4,6 +4,7 @@ import Chip from './ui/Chip'
 import QuickAddPreviewCard from './QuickAddPreviewCard'
 import HighlightedText from './HighlightedText'
 import Icon from './ui/Icon'
+import IconButton from './ui/IconButton'
 import Kbd from './ui/Kbd'
 
 export default function QuickAddBarView({
@@ -12,6 +13,9 @@ export default function QuickAddBarView({
   segments,
   onTextChange,
   onSubmit,
+  onSubmitKeep,
+  onRootKeyDown,
+  speech,
   onKeyDown,
   inputRef,
   backdropRef,
@@ -28,7 +32,7 @@ export default function QuickAddBarView({
   const listOpen = suggestions.items.length > 0
   const optionId = (i) => `${suggestions.listId}-${i}`
   return (
-    <div>
+    <div onKeyDown={onRootKeyDown}>
       <div className="flex items-start gap-3">
         <div className="relative min-w-0 flex-1">
           <div
@@ -69,6 +73,15 @@ export default function QuickAddBarView({
                 )}
               />
             </div>
+            {speech && (
+              <IconButton
+                icon={speech.listening ? 'stop' : 'mic'}
+                label={speech.listening ? 'Detener dictado' : 'Dictar (el navegador envía el audio a su servicio de voz)'}
+                aria-pressed={speech.listening}
+                onClick={speech.toggle}
+                className={cx('self-center -my-2 -mr-1.5', speech.listening && 'bg-accent-subtle text-accent')}
+              />
+            )}
             {!mobile && !text && (
               <span className="flex h-6 items-center">
                 <Kbd>N</Kbd>
@@ -107,6 +120,17 @@ export default function QuickAddBarView({
           Añadir
         </Button>
       </div>
+      {speech && (
+        <p role="status" className={cx('text-small text-danger', speech.error && 'mt-1')}>
+          {speech.error}
+        </p>
+      )}
+      {!mobile && canCreate && <p className="mt-1 text-caption text-t3">Ctrl+Enter: crear y seguir</p>}
+      {mobile && canCreate && (
+        <Button variant="secondary" onClick={onSubmitKeep} className="mt-2 h-11 w-full">
+          Crear y seguir
+        </Button>
+      )}
       {card && <QuickAddPreviewCard card={card} showHint={showHint} />}
       {preview && (
         <div className="mt-2">

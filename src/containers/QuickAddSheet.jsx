@@ -10,9 +10,10 @@ export default function QuickAddSheet({ open, defaultDay, tasks, onCreate, onMor
     if (open) inputRef.current?.focus()
   }, [open])
 
-  const create = (entries) => {
-    onCreate(entries)
-    onClose()
+  const create = (entries, meta) => {
+    const result = onCreate(entries, meta)
+    if (result !== false && !meta?.keepOpen) onClose()
+    return result
   }
 
   return (

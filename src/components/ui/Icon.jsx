@@ -32,6 +32,13 @@ const PATHS = {
   ),
   inbox: <path d="M4 13h4l1 3h6l1-3h4M4 13l2-8h12l2 8v6H4z" />,
   repeat: <path d="M17 2l3 3-3 3M20 5H8a4 4 0 0 0-4 4v1M7 22l-3-3 3-3M4 19h12a4 4 0 0 0 4-4v-1" />,
+  mic: (
+    <>
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10v1a7 7 0 0 0 14 0v-1M12 18v4" />
+    </>
+  ),
+  stop: <rect x="6" y="6" width="12" height="12" rx="2" />,
   copy: (
     <>
       <rect x="9" y="9" width="11" height="11" rx="2" />

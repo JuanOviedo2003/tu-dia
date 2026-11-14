@@ -30,8 +30,15 @@ function CustomInput({ custom }) {
   )
 }
 
-function FieldChip({ field, open, onToggle, onClose }) {
+const ORIGINS = {
+  edited: { text: 'editado', title: 'Editado', dot: 'bg-accent' },
+  template: { text: 'desde una tarea anterior', title: 'Desde una tarea anterior', dot: 'bg-accent' },
+  habit: { text: 'habitual', title: 'Habitual', dot: 'border border-accent' },
+}
+
+function FieldChip({ field, open, onToggle, onClose, shortcut, showShortcut }) {
   const anchorRef = useRef(null)
+  const origin = ORIGINS[field.origin]
   return (
     <span className="inline-flex">
       <button
@@ -39,7 +46,9 @@ function FieldChip({ field, open, onToggle, onClose }) {
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label={`${field.name}: ${field.label}${field.edited ? ' (editado)' : ''}`}
+        aria-label={`${field.name}: ${field.label}${origin ? ` (${origin.text})` : ''}`}
+        title={[origin?.title, showShortcut && shortcut].filter(Boolean).join(' · ') || undefined}
+        aria-keyshortcuts={shortcut ?? undefined}
         onClick={onToggle}
         className="-my-2 inline-flex items-center rounded-sm"
       >
@@ -52,7 +61,7 @@ function FieldChip({ field, open, onToggle, onClose }) {
           {field.status && <StatusIcon status={field.status} size={12} />}
           {field.repeat && <Icon name="repeat" size={12} />}
           {field.label}
-          {field.edited && <span aria-hidden="true" className="ml-0.5 size-1.5 rounded-full bg-accent" />}
+          {origin && <span aria-hidden="true" className={cx('ml-0.5 size-1.5 rounded-full', origin.dot)} />}
         </span>
       </button>
       <ChipMenu
@@ -63,6 +72,7 @@ function FieldChip({ field, open, onToggle, onClose }) {
         onSelect={field.onSelect}
         onClose={onClose}
         anchorRef={anchorRef}
+        hint={showShortcut ? shortcut : undefined}
         extra={field.custom && <CustomInput custom={field.custom} />}
       />
     </span>
@@ -85,10 +95,12 @@ export default function QuickAddPreviewCard({ card, showHint }) {
         )}
       </div>
       <div className="mt-2.5 flex flex-wrap items-center gap-x-2 gap-y-3">
-        {card.fields.map((field) => (
+        {card.fields.map((field, i) => (
           <FieldChip
             key={field.key}
             field={field}
+            shortcut={`Alt+${i + 1}`}
+            showShortcut={showHint}
             open={card.openField === field.key}
             onToggle={() => card.onOpenField(card.openField === field.key ? null : field.key)}
             onClose={() => card.onOpenField(null)}
@@ -104,6 +116,11 @@ export default function QuickAddPreviewCard({ card, showHint }) {
             {doubt}
           </Chip>
         ))}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p className="text-caption text-t3">{card.load.text}</p>
+        {card.load.busy && <Chip tone="warning">Día cargado</Chip>}
+        {card.load.clash && <Chip tone="warning">{`A esa hora ya está: ${card.load.clash}`}</Chip>}
       </div>
       {showHint && <p className="mt-2 text-caption text-t3">Enter para guardar, Shift+Enter para otra tarea</p>}
     </div>

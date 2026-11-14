@@ -1,4 +1,4 @@
-import { STATUSES } from './constants'
+import { BUSY_DAY_TASKS, STATUSES } from './constants'
 import { fromDateStr, toDateStr, todayStr } from './storage'
 import { monthName, normalizeDuration } from './time'
 
@@ -72,6 +72,24 @@ export function dayStatusText({ done, total, tone }) {
   return `${done} ${done === 1 ? 'hecha' : 'hechas'} de ${total}`
 }
 
+export function dayLoad(tasks, day, startMinutes = null) {
+  const dayTasks = tasksForDay(tasks, day)
+  const { done, total } = dayProgress(dayTasks, day)
+  const clash = startMinutes === null ? null : dayTasks.find((t) => t.startMinutes === startMinutes) ?? null
+  return { done, total, busy: total >= BUSY_DAY_TASKS, clash }
+}
+
+export function dayLoadText(label, { done, total }) {
+  if (total === 0) return 'Ese día está libre'
+  const base = `${capitalize(label)} ya tiene ${total} ${total === 1 ? 'tarea' : 'tareas'}`
+  return done ? `${base} · ${done} ${done === 1 ? 'hecha' : 'hechas'}` : base
+}
+
+export function unscheduledLoadText(count) {
+  if (count === 0) return 'Aún no hay tareas sin programar'
+  return `Hay ${count} ${count === 1 ? 'tarea' : 'tareas'} sin programar`
+}
+
 export function isOverdue(task, today = todayStr()) {
   return Boolean(task.day) && task.day < today && task.status !== 'done'
 }
@@ -142,7 +160,7 @@ export function monthGrid(dateStr) {
 const MAX_SUGGESTIONS = 5
 const MIN_SUGGEST_CHARS = 2
 
-const foldText = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+export const foldText = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 export function suggestTitles(tasks, line) {
   const query = foldText((line || '').trim())
