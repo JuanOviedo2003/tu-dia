@@ -42,7 +42,13 @@ jobs:
       - name: Build
         run: npm run build
       - name: Validar reglas Firestore (dry-run)
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
         run: |
+          if [ -z "$FIREBASE_TOKEN" ]; then
+            echo "FIREBASE_TOKEN no disponible: se omite el dry-run"
+            exit 0
+          fi
           npm install --no-save firebase-tools@13
           npx firebase deploy --only firestore:rules --project "$FIREBASE_PROJECT" --dry-run
       - name: Subir artefacto dist
