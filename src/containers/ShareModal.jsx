@@ -12,7 +12,8 @@ const CONFIRM_COPY = {
   },
   renewView: {
     title: 'Renovar link de solo ver',
-    message: 'Los links de solo ver anteriores dejarán de funcionar. Los editores no se ven afectados.',
+    message:
+      'Se cortará el acceso a TODAS las personas con las que compartiste. Tendrás que enviarles el link nuevo. Tus dispositivos de edición no se ven afectados.',
     confirmLabel: 'Renovar',
   },
   rotateEdit: {
@@ -29,8 +30,11 @@ export default function ShareModal({
   currentRoom,
   currentRole,
   tokens,
+  ownAgenda,
+  agendaName,
   onJoin,
-  onCreateRoom,
+  onListViewers,
+  onRevokeViewer,
   onRenewViewToken,
   onRotateEditToken,
   onLeaveRoom,
@@ -41,7 +45,8 @@ export default function ShareModal({
     currentRoom,
     currentRole,
     tokens,
-    onCreateRoom,
+    onListViewers,
+    onRevokeViewer,
     onRenewViewToken,
     onRotateEditToken,
     onLeaveRoom,
@@ -49,14 +54,23 @@ export default function ShareModal({
     onClose,
     syncStatus,
   })
-  const confirmCopy = CONFIRM_COPY[share.confirm] || CONFIRM_COPY.leave
+  const confirmCopy =
+    share.confirm === 'revoke'
+      ? {
+          title: 'Quitar acceso',
+          message: `${share.revokeTarget?.name || 'Esta persona'} dejará de ver tu agenda y no podrá volver a entrar con el mismo link.`,
+          confirmLabel: 'Quitar acceso',
+        }
+      : CONFIRM_COPY[share.confirm] || CONFIRM_COPY.leave
 
   return (
     <>
       <Modal open={open} onClose={share.confirm ? undefined : onClose} title="Compartir" width="sm:max-w-md">
         <ShareView
           currentRoom={currentRoom}
-          currentRole={currentRole}
+          isEditor={share.canManage}
+          ownAgenda={ownAgenda}
+          agendaName={agendaName}
           editUrl={share.editUrl}
           viewUrl={share.viewUrl}
           canvasEditRef={share.canvasEditRef}
@@ -69,13 +83,16 @@ export default function ShareModal({
           onNativeShare={share.nativeShare}
           moreOpen={share.moreOpen}
           onToggleMore={share.toggleMore}
-          joinOpen={share.joinOpen}
-          onToggleJoin={share.toggleJoin}
-          creating={share.creating}
+          inviteOpen={share.inviteOpen}
+          onToggleInvite={share.toggleInvite}
+          people={share.people}
+          peopleLoading={share.peopleLoading}
+          viewersError={share.viewersError}
+          activeCount={share.activeCount}
+          onRevoke={share.askRevoke}
           renewing={share.renewing}
           rotatingEdit={share.rotatingEdit}
           busy={share.busy}
-          onCreate={share.handleCreate}
           onAskConfirm={share.askConfirm}
           input={share.input}
           onInputChange={share.setInput}

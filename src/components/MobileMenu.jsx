@@ -22,7 +22,7 @@ function MenuItem({ icon, active, onClick, children }) {
   )
 }
 
-export default function MobileMenu({ open, onClose, view, onViewChange, onToday, onShare, onOpenBacklog, backlogCount, sync, isViewer }) {
+export default function MobileMenu({ open, onClose, view, onViewChange, onToday, onShare, onOpenBacklog, backlogCount, sync, isViewer, sharedLabel, onOpenShared }) {
   const run = (action) => () => {
     action()
     onClose()
@@ -52,9 +52,16 @@ export default function MobileMenu({ open, onClose, view, onViewChange, onToday,
         <MenuItem icon="inbox" onClick={run(onOpenBacklog)}>
           Sin programar ({backlogCount})
         </MenuItem>
-        <MenuItem icon="share" onClick={run(onShare)}>
-          Compartir
-        </MenuItem>
+        {!isViewer && (
+          <MenuItem icon="share" onClick={run(onShare)}>
+            Compartir
+          </MenuItem>
+        )}
+        {sharedLabel && (
+          <MenuItem icon="share" onClick={run(onOpenShared)}>
+            {sharedLabel}
+          </MenuItem>
+        )}
       </nav>
     </Modal>
   )

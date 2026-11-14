@@ -8,6 +8,9 @@ const ROOM_KEY = 'tu-dia-room-v1'
 const TOKEN_KEY = 'tu-dia-token-v1'
 const ROLE_KEY = 'tu-dia-role-v1'
 const VIEW_TOKEN_KEY = 'tu-dia-view-token-v1'
+const PROFILE_KEY = 'tu-dia-profile-v1'
+const OWN_ROOM_KEY = 'tu-dia-own-room-v1'
+const SHARED_KEY = 'tu-dia-shared-v1'
 
 function seed() {
   const today = toDateStr(new Date())
@@ -116,6 +119,39 @@ export const saveViewToken = (token) => saveItem(VIEW_TOKEN_KEY, token)
 export const loadViewToken = () => loadItem(VIEW_TOKEN_KEY)
 export const saveRole = (role) => saveItem(ROLE_KEY, role)
 export const loadRole = () => loadItem(ROLE_KEY)
+export const saveProfileName = (name) => saveItem(PROFILE_KEY, name)
+export const loadProfileName = () => loadItem(PROFILE_KEY)
+export const saveOwnRoom = (code) => saveItem(OWN_ROOM_KEY, code)
+export const loadOwnRoom = () => loadItem(OWN_ROOM_KEY)
+
+export function clearRoomCredentials() {
+  saveRoomCode(null)
+  saveToken(null)
+  saveRole(null)
+  saveViewToken(null)
+}
+
+export function migrateLegacyViewer() {
+  if (loadRole() !== 'viewer') return false
+  const code = loadRoomCode()
+  const token = loadToken()
+  if (code && token && !loadShared()) saveShared({ code, token, ownerName: null })
+  clearRoomCredentials()
+  return true
+}
+
+export function saveShared(shared) {
+  saveItem(SHARED_KEY, shared ? JSON.stringify(shared) : null)
+}
+
+export function loadShared() {
+  try {
+    const parsed = JSON.parse(loadItem(SHARED_KEY))
+    return parsed && parsed.code && parsed.token ? parsed : null
+  } catch {
+    return null
+  }
+}
 
 export function toDateStr(d) {
   const y = d.getFullYear()

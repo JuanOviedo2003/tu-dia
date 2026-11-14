@@ -19,6 +19,11 @@ export const MINUTES_PER_DAY = 1440
 export const DEFAULT_START_MINUTES = 9 * 60
 export const DEFAULT_REPEAT_MONTHS = 6
 
+export const MAX_VIEWERS = 10
+export const MAX_NAME_LENGTH = 40
+export const NAME_REQUIRED_ERROR = 'Escribe tu nombre para continuar.'
+export const SHARED_OPEN_TIMEOUT_MS = 15000
+
 export const REPEAT_LABELS = { week: 'Cada semana', month: 'Cada mes' }
 
 export const VIEWS = [

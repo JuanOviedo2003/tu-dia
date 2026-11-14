@@ -11,6 +11,7 @@ export function useTasks(roomRole, onEditTokenMigrated) {
   const [tasks, setTasks] = useState(loadTasks)
   const [tombstones, setTombstones] = useState(loadTombstones)
   const [syncStatus, setSyncStatus] = useState('offline')
+  const [roomOwnerName, setRoomOwnerName] = useState(null)
 
   const tasksRef = useRef(tasks)
   const tombRef = useRef(tombstones)
@@ -33,6 +34,7 @@ export function useTasks(roomRole, onEditTokenMigrated) {
         },
         onStatus: (s) => setSyncStatus(s),
         onEditTokenMigrated: (code, token) => migratedRef.current?.(code, token),
+        onMeta: (meta) => setRoomOwnerName(meta.ownerName),
       })
       return s
     },
@@ -254,6 +256,7 @@ export function useTasks(roomRole, onEditTokenMigrated) {
         setTasks([])
         setTombstones({})
       }
+      setRoomOwnerName(null)
       return sync.start(roomId, token, role)
     },
     [sync],
@@ -261,13 +264,13 @@ export function useTasks(roomRole, onEditTokenMigrated) {
 
   // Crea sala nueva: genera código + tokens, crea doc en Firestore
   // con el snapshot completo de tareas y tombstones locales.
-  const createRoomSync = useCallback(async () => {
+  const createRoomSync = useCallback(async (ownerName) => {
     const roomCode = uid().slice(0, 10).toUpperCase()
     const tokens = await generateRoomTokens()
-    const result = await sync.createRoom(roomCode, tokens.editTokenHash, tokens.viewTokenHash, tasks, tombstones)
+    const result = await sync.createRoom(roomCode, tokens.editTokenHash, tokens.viewTokenHash, tasksRef.current, tombRef.current, ownerName)
     if (!result.ok) return { ok: false, error: result.error }
     return { ok: true, roomCode, editToken: tokens.editToken, viewToken: tokens.viewToken }
-  }, [sync, tasks, tombstones])
+  }, [sync])
 
   const renewViewTokenSync = useCallback(async (roomCode) => {
     const viewToken = generateToken()
@@ -286,6 +289,10 @@ export function useTasks(roomRole, onEditTokenMigrated) {
   return {
     tasks,
     syncStatus,
+    roomOwnerName,
+    setOwnerName: sync.setOwnerName,
+    listViewers: sync.listViewers,
+    revokeViewer: sync.revokeViewer,
     addTask,
     updateTask,
     removeTask,

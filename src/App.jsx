@@ -5,6 +5,7 @@ import { cx } from './lib/cx'
 import { minutesToLabel } from './lib/time'
 import { useIsMobile } from './hooks/useMediaQuery'
 import { ROOM_STATES, useAgenda } from './hooks/useAgenda'
+import { SHARED_PHASES } from './hooks/useSharedAgenda'
 import { useAgendaDnd } from './hooks/useAgendaDnd'
 import { useAgendaNav } from './hooks/useAgendaNav'
 import { useShortcuts } from './hooks/useShortcuts'
@@ -14,12 +15,14 @@ import AppHeader from './components/AppHeader'
 import BottomNav from './components/BottomNav'
 import ConfirmDialog from './components/ConfirmDialog'
 import MobileMenu from './components/MobileMenu'
+import SharedBanner from './components/SharedBanner'
 import StatusSheet from './components/StatusSheet'
 import TaskCardView from './components/TaskCardView'
 import FullScreenMessage from './components/ui/FullScreenMessage'
 import Toast from './components/ui/Toast'
 import Backlog from './containers/Backlog'
 import DayView from './containers/DayView'
+import NameGate from './containers/NameGate'
 import TaskFormModal from './containers/TaskFormModal'
 const loadMonthView = () => import('./containers/MonthView')
 const loadShareModal = () => import('./containers/ShareModal')
@@ -35,9 +38,17 @@ const preloadLazyViews = () => {
 
 const MOBILE_MAX_WIDTH = 599
 
+const SHARED_MESSAGES = {
+  [SHARED_PHASES.VALIDATING]: { icon: 'inprogress', title: 'Validando acceso…', text: 'Verificando el link.' },
+  [SHARED_PHASES.DENIED]: { icon: 'danger', title: 'Agenda privada', text: 'No tienes acceso a esta agenda. Pide un link válido.' },
+  [SHARED_PHASES.NOT_FOUND]: { icon: 'danger', title: 'Agenda no encontrada', text: 'Esta agenda compartida ya no existe. Pide un link actualizado.' },
+  [SHARED_PHASES.TIMED_OUT]: { icon: 'danger', title: 'Sin respuesta', text: 'No se pudo abrir la agenda. Revisa tu conexión.' },
+  [SHARED_PHASES.REVOKED]: { icon: 'danger', title: 'Acceso retirado', text: 'Esta agenda ya no está compartida contigo.' },
+}
+
 export default function App() {
   useEffect(preloadLazyViews, [])
-  const { api, room, requestJoin, pendingJoin, confirmJoin, cancelJoin, createNewRoom, renewViewToken, rotateEditToken, leaveRoom, backToLocal } =
+  const { api, shared, room, profileName, ownAgenda, agendaName, saveProfile, requestJoin, pendingJoin, confirmJoin, cancelJoin, renewViewToken, rotateEditToken, leaveRoom, backToLocal } =
     useAgenda()
   const isMobile = useIsMobile(MOBILE_MAX_WIDTH)
   const nav = useAgendaNav()
@@ -79,9 +90,44 @@ export default function App() {
   })
 
   const closeShare = () => setShareOpen(false)
-  const sync = { status: api.syncStatus, room: room.inRoom ? room.code : '', role: room.role }
+  const sync = {
+    status: api.syncStatus,
+    room: room.inRoom && !isViewer ? room.code : '',
+    role: isViewer ? 'viewer' : room.role,
+  }
+  const sharedLabel = shared.hasRemembered && !shared.active ? `Agenda de ${shared.ownerName || 'alguien más'}` : null
 
-  if (room.state === ROOM_STATES.NOT_FOUND) {
+  if (shared.phase === SHARED_PHASES.ASKING_NAME) {
+    return (
+      <NameGate
+        onSave={shared.submitName}
+        error={shared.nameError}
+        title="Te compartieron una agenda"
+        hint="Así quien te compartió la agenda sabrá quién eres."
+        submitLabel="Continuar"
+      />
+    )
+  }
+
+  if (!profileName) return <NameGate onSave={saveProfile} />
+
+  const sharedMessage = SHARED_MESSAGES[shared.phase]
+  if (sharedMessage) {
+    const timedOut = shared.phase === SHARED_PHASES.TIMED_OUT
+    return (
+      <FullScreenMessage
+        {...sharedMessage}
+        actionLabel={timedOut ? 'Reintentar' : 'Volver a mi agenda'}
+        onAction={timedOut ? shared.retry : shared.close}
+        secondaryLabel={timedOut ? 'Volver a mi agenda' : undefined}
+        onSecondary={shared.close}
+      />
+    )
+  }
+
+  const roomGate = shared.active ? null : room.state
+
+  if (roomGate === ROOM_STATES.NOT_FOUND) {
     return (
       <FullScreenMessage
         icon="danger"
@@ -93,7 +139,7 @@ export default function App() {
     )
   }
 
-  if (room.state === ROOM_STATES.DENIED) {
+  if (roomGate === ROOM_STATES.DENIED) {
     return (
       <FullScreenMessage
         icon="danger"
@@ -105,7 +151,7 @@ export default function App() {
     )
   }
 
-  if (room.state === ROOM_STATES.VALIDATING) {
+  if (roomGate === ROOM_STATES.VALIDATING) {
     return <FullScreenMessage icon="inprogress" title="Validando acceso…" text="Verificando el link." />
   }
 
@@ -130,7 +176,11 @@ export default function App() {
           nextLabel={nav.nextLabel}
           sync={sync}
           onShare={() => setShareOpen(true)}
+          sharedLabel={sharedLabel}
+          onOpenShared={shared.reopen}
         />
+
+        {shared.active && <SharedBanner ownerName={shared.ownerName} onBack={shared.close} />}
 
         <div className={cx('flex min-h-0 flex-1', isMobile ? 'flex-col' : 'flex-wrap overflow-y-auto')}>
           {!isMobile && (
@@ -211,6 +261,8 @@ export default function App() {
           sync={sync}
           isViewer={isViewer}
           onShare={() => setShareOpen(true)}
+          sharedLabel={sharedLabel}
+          onOpenShared={shared.reopen}
           onOpenBacklog={() => setBacklogOpen(true)}
           backlogCount={unscheduledTasks(api.tasks).length}
         />
@@ -229,7 +281,7 @@ export default function App() {
           onClose={ui.closeModal}
         />
 
-        {shareOpen && (
+        {shareOpen && !isViewer && (
           <Suspense fallback={null}>
             <ShareModal
               open={shareOpen}
@@ -238,7 +290,10 @@ export default function App() {
               currentRole={room.role}
               tokens={room.tokens}
               onJoin={requestJoin}
-              onCreateRoom={createNewRoom}
+              ownAgenda={ownAgenda}
+              agendaName={agendaName}
+              onListViewers={api.listViewers}
+              onRevokeViewer={api.revokeViewer}
               onRenewViewToken={renewViewToken}
               onRotateEditToken={rotateEditToken}
               onLeaveRoom={() => {

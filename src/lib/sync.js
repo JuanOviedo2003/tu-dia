@@ -1,25 +1,38 @@
-import { deleteField, doc, onSnapshot, runTransaction, setDoc, writeBatch } from 'firebase/firestore'
+import { collection, deleteField, doc, getDocs, onSnapshot, query, runTransaction, setDoc, updateDoc, where, writeBatch } from 'firebase/firestore'
 import { db, auth, authReady } from './firebase'
 import { reconcile } from './syncMerge'
 import { generateToken, sha256Hash } from './tokens'
+import { MAX_VIEWERS } from './constants'
+import { cleanName } from './share'
 
 const PUSH_DEBOUNCE = 150
 const MAX_RETRIES = 3
 const BASE_BACKOFF_MS = 1000
+const DEFAULT_VIEWER_NAME = 'Invitado'
+
+function toViewer(d) {
+  const data = d.data()
+  return { uid: d.id.split('_')[1], name: data.name || '', joinedAt: data.joinedAt ?? null, revoked: data.revoked === true }
+}
 
 // Cliente de sync: Firestore como estado autoritativo por room.
 // Acceso basado en tokens SHA-256 verificados por reglas.
-export function createSync({ getState, onState, onStatus, onEditTokenMigrated }) {
+export function createSync({ getState, onState, onStatus, onEditTokenMigrated, onMeta }) {
   let roomId = null
   let token = null
   let role = null
   let unsub = null
   let docRef = null
   let pushTimer = null
+  let unsubClaim = null
   let claimReady = false
   let retryCount = 0
   let retryTimer = null
   let session = 0
+
+  function viewersQuery(roomCode) {
+    return query(collection(db, 'roomAccess'), where('roomId', '==', roomCode), where('role', '==', 'viewer'))
+  }
 
   function setStatus(s) {
     if (s === 'online') retryCount = 0
@@ -69,6 +82,7 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated })
       (snap) => {
         if (s !== session) return
         retryCount = 0
+        if (snap.exists()) onMeta?.({ ownerName: cleanName(snap.data().ownerName) })
         setStatus('online')
         if (!snap.exists()) return
         const d = snap.data()
@@ -85,15 +99,20 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated })
     )
   }
 
-  // Crea doc de reclamación roomAccess/{roomId}_{uid} con role y proof.
-  async function createClaim(roomCode, token, role) {
+  // Crea doc de reclamación roomAccess/{roomId}_{uid}: editor {role, proof, roomId}; viewer suma name y joinedAt.
+  async function createClaim(roomCode, token, role, name) {
     await authReady
     const user = auth.currentUser
     if (!user || !token) return { ok: false, error: 'no-auth' }
     const proof = sha256Hash(token)
     const claimRef = doc(db, 'roomAccess', `${roomCode}_${user.uid}`)
+    const data = { role, proof, roomId: roomCode }
+    if (role === 'viewer') {
+      data.name = cleanName(name) || DEFAULT_VIEWER_NAME
+      data.joinedAt = Date.now()
+    }
     try {
-      await setDoc(claimRef, { role, proof })
+      await setDoc(claimRef, data)
       return { ok: true }
     } catch (err) {
       return { ok: false, error: err?.code || 'unknown' }
@@ -136,18 +155,37 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated })
     docRef = doc(db, 'rooms', id)
     retryCount = 0
     subscribeRaw()
+    if (role === 'viewer') watchClaim(id)
+  }
+
+  function watchClaim(id) {
+    const s = session
+    const uid = auth.currentUser?.uid
+    if (!uid) return
+    unsubClaim = onSnapshot(doc(db, 'roomAccess', `${id}_${uid}`), (snap) => {
+      if (s !== session) return
+      if (snap.exists() && snap.data().revoked !== true) return
+      stopListening()
+      setStatus('auth-error')
+    }, () => {})
+  }
+
+  function stopListening() {
+    if (retryTimer) clearTimeout(retryTimer)
+    retryTimer = null
+    if (unsub) unsub()
+    unsub = null
+    claimReady = false
   }
 
   function teardown() {
     session++
     if (pushTimer) clearTimeout(pushTimer)
     pushTimer = null
-    if (retryTimer) clearTimeout(retryTimer)
-    retryTimer = null
-    if (unsub) unsub()
-    unsub = null
+    stopListening()
+    if (unsubClaim) unsubClaim()
+    unsubClaim = null
     docRef = null
-    claimReady = false
     retryCount = 0
   }
 
@@ -155,16 +193,18 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated })
   // NOTA: NO hacer getDoc antes — las reglas niegan `read` en docs inexistentes
   // (resource es null → resource.data falla → permission-denied). Las reglas ya
   // distinguen create vs update: `create` valida campos; `update` exige ser owner.
-  async function createRoom(roomCode, editTokenHash, viewTokenHash, initialTasks, initialTombstones) {
+  async function createRoom(roomCode, editTokenHash, viewTokenHash, initialTasks, initialTombstones, ownerName) {
     await authReady
     const user = auth.currentUser
     if (!user) return { ok: false, error: 'no-auth' }
     try {
       const batch = writeBatch(db)
+      const clean = cleanName(ownerName)
       batch.set(doc(db, 'rooms', roomCode), {
         ownerUid: user.uid,
         tasks: initialTasks || [],
         tombstones: initialTombstones || {},
+        ...(clean && { ownerName: clean }),
       })
       batch.set(doc(db, 'roomKeys', roomCode), { editTokenHash, viewTokenHash })
       await batch.commit()
@@ -212,8 +252,69 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated })
     }
   }
 
-  function renewViewToken(roomCode, newViewHash) {
-    return updateRoomKey(roomCode, 'viewTokenHash', newViewHash)
+  async function renewViewToken(roomCode, newViewHash) {
+    const result = await updateRoomKey(roomCode, 'viewTokenHash', newViewHash)
+    if (!result.ok) return result
+    try {
+      const snap = await getDocs(viewersQuery(roomCode))
+      const batch = writeBatch(db)
+      let pending = 0
+      snap.forEach((d) => {
+        if (d.data().revoked !== true) {
+          batch.delete(d.ref)
+          pending++
+        }
+      })
+      if (pending) await batch.commit()
+    } catch (err) {
+      console.error('[sync] clear viewer claims failed:', err?.code || err)
+    }
+    return result
+  }
+
+  async function updateAs(ref, patch) {
+    try {
+      await updateDoc(ref, patch)
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: err?.code || 'unknown' }
+    }
+  }
+
+  async function setOwnerName(name) {
+    const clean = cleanName(name)
+    if (!clean) return { ok: false, error: 'invalid-name' }
+    await authReady
+    if (!auth.currentUser || !roomId) return { ok: false, error: 'no-auth' }
+    return updateAs(doc(db, 'rooms', roomId), { ownerName: clean })
+  }
+
+  function listViewers(cb, onError) {
+    if (!roomId) return () => {}
+    const id = roomId
+    return onSnapshot(
+      viewersQuery(id),
+      (snap) => cb(snap.docs.map(toViewer).sort((a, b) => (a.joinedAt ?? 0) - (b.joinedAt ?? 0))),
+      (err) => onError?.(mapError(err)),
+    )
+  }
+
+  async function revokeViewer(uid) {
+    await authReady
+    if (!auth.currentUser || !roomId || !uid) return { ok: false, error: 'no-auth' }
+    return updateAs(doc(db, 'roomAccess', `${roomId}_${uid}`), { revoked: true })
+  }
+
+  async function joinAsViewer(id, viewToken, name) {
+    const clean = cleanName(name)
+    if (!clean) return { ok: false, error: 'invalid-name' }
+    const user = await authReady
+    if (!user) return { ok: false, error: 'no-auth' }
+    const snap = await getDocs(viewersQuery(id)).catch(() => null)
+    const active = snap ? snap.docs.map(toViewer).filter((v) => !v.revoked && v.uid !== user.uid) : []
+    if (active.length >= MAX_VIEWERS) return { ok: false, error: 'viewer-limit' }
+    await start(id, viewToken, 'viewer', clean)
+    return { ok: true }
   }
 
   async function rotateEditToken(roomCode, newEditHash, newEditToken) {
@@ -226,14 +327,14 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated })
     return result
   }
 
-  async function claimOrFail(id, claimToken, claimRole, s) {
-    const result = await createClaim(id, claimToken, claimRole)
+  async function claimOrFail(id, claimToken, claimRole, s, name) {
+    const result = await createClaim(id, claimToken, claimRole, name)
     if (s !== session) return false
     if (!result.ok) setStatus(result.error === 'permission-denied' ? 'auth-error' : 'offline')
     return result.ok
   }
 
-  async function start(id, nextToken, nextRole) {
+  async function start(id, nextToken, nextRole, nextName) {
     teardown()
     const s = session
     roomId = id
@@ -247,7 +348,7 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated })
         setStatus('auth-error')
         return
       }
-      if (!(await claimOrFail(id, nextToken, nextRole, s))) return
+      if (!(await claimOrFail(id, nextToken, nextRole, s, nextName))) return
       if (nextRole === 'editor') {
         const migratedToken = await migrateLegacyRoom(id)
         if (migratedToken) onEditTokenMigrated?.(id, migratedToken)
@@ -264,6 +365,10 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated })
 
   return {
     start,
+    joinAsViewer,
+    setOwnerName,
+    listViewers,
+    revokeViewer,
     push,
     createRoom,
     renewViewToken,

@@ -3,7 +3,7 @@ import { initializeApp } from 'firebase/app'
 import { getAuth, connectAuthEmulator, signInAnonymously } from 'firebase/auth'
 import {
   getFirestore, connectFirestoreEmulator, doc, getDocFromServer, setDoc, updateDoc,
-  writeBatch, runTransaction, deleteField, terminate,
+  writeBatch, runTransaction, deleteField, terminate, collection, query, where, getDocs, deleteDoc,
 } from 'firebase/firestore'
 import { sha256 } from 'js-sha256'
 
@@ -46,7 +46,12 @@ const read = (u, path) => getDocFromServer(doc(u.db, ...path.split('/'))).then((
   if (!s.exists()) throw Object.assign(new Error('not exists'), { code: 'not-found' })
   return s
 })
-const claim = (u, room, role, proof) => setDoc(doc(u.db, 'roomAccess', `${room}_${u.uid}`), { role, proof })
+const rawClaim = (u, room, data) => setDoc(doc(u.db, 'roomAccess', `${room}_${u.uid}`), data)
+const claim = (u, room, role, proof) => rawClaim(u, room, role === 'viewer'
+  ? { role, proof, roomId: room, name: 'Ana', joinedAt: Date.now() }
+  : { role, proof })
+const claimRef = (u, room, uid) => doc(u.db, 'roomAccess', `${room}_${uid}`)
+const listViewersOf = (u, room) => getDocs(query(collection(u.db, 'roomAccess'), where('roomId', '==', room), where('role', '==', 'viewer')))
 
 function pushLike(u, room, extra) {
   return runTransaction(u.db, async (tx) => {
@@ -248,7 +253,88 @@ async function rulesSuite() {
   await deny(8, 'editor excede limite 500 tasks', () =>
     updateDoc(doc(editor.db, 'rooms', R), { tasks: Array.from({ length: 501 }, (_, i) => i) }))
 
-  return [owner, editor, viewer, attacker]
+  const v9 = await makeUser('v9')
+  const v9b = await makeUser('v9b')
+  const v9c = await makeUser('v9c')
+  const vTok = H(viewTok3)
+  const vClaim = (room, extra) => ({ role: 'viewer', proof: vTok, roomId: room, name: 'Beto', joinedAt: Date.now(), ...extra })
+  await allow(9, 'viewer registra nombre y joinedAt en su claim', () => rawClaim(v9, R, vClaim(R)))
+  await allow(9, 'viewer con claim nombrado lee sala', () => read(v9, `rooms/${R}`))
+  await allow(9, 'viewer nombre de 40 chars', () => rawClaim(v9b, R, vClaim(R, { name: 'x'.repeat(40) })))
+  await allow(9, 'viewer joinedAt como timestamp', () => rawClaim(v9c, R, vClaim(R, { joinedAt: new Date() })))
+  const v9d = await makeUser('v9d')
+  await deny(9, 'nombre vacio', () => rawClaim(v9d, R, vClaim(R, { name: '' })))
+  await deny(9, 'nombre solo espacios', () => rawClaim(v9d, R, vClaim(R, { name: '   ' })))
+  await deny(9, 'nombre de 41 chars', () => rawClaim(v9d, R, vClaim(R, { name: 'x'.repeat(41) })))
+  await deny(9, 'nombre no string', () => rawClaim(v9d, R, vClaim(R, { name: 5 })))
+  await deny(9, 'viewer sin nombre', () => rawClaim(v9d, R, { role: 'viewer', proof: vTok, roomId: R, joinedAt: Date.now() }))
+  await deny(9, 'viewer sin roomId', () => rawClaim(v9d, R, { role: 'viewer', proof: vTok, name: 'Beto', joinedAt: Date.now() }))
+  await deny(9, 'viewer roomId de otra sala', () => rawClaim(v9d, R, vClaim('OTRA')))
+  await deny(9, 'viewer campo extra en claim', () => rawClaim(v9d, R, vClaim(R, { extra: 1 })))
+  await deny(9, 'viewer crea claim con revoked:true', () => rawClaim(v9d, R, vClaim(R, { revoked: true })))
+  await deny(9, 'viewer crea claim con revoked:false', () => rawClaim(v9d, R, vClaim(R, { revoked: false })))
+  await deny(9, 'viewer se auto-revoca (updateDoc)', () => updateDoc(claimRef(v9, R, v9.uid), { revoked: true }))
+  await deny(9, 'viewer pone revoked:false (updateDoc)', () => updateDoc(claimRef(v9, R, v9.uid), { revoked: false }))
+  await deny(9, 'viewer revoca a otro viewer', () => updateDoc(claimRef(v9, R, v9b.uid), { revoked: true }))
+  await deny(9, 'atacante revoca viewer', () => updateDoc(claimRef(attacker, R, v9.uid), { revoked: true }))
+  await deny(9, 'viewer lee claim de otro viewer', () => read(v9, `roomAccess/${R}_${v9b.uid}`))
+  await deny(9, 'editor revoca con cambio extra', () => updateDoc(claimRef(editor, R, v9.uid), { revoked: true, name: 'Hack' }))
+  await deny(9, 'editor revoca claim de editor', () => updateDoc(claimRef(editor, R, editor.uid), { revoked: true }))
+  await deny(9, 'editor revoca con revoked:false', () => updateDoc(claimRef(editor, R, v9.uid), { revoked: false }))
+
+  await allow(9, 'owner pone nombre de sala', () => updateDoc(doc(owner.db, 'rooms', R), { ownerName: 'Dueno' }))
+  await allow(9, 'editor cambia ownerName', () => updateDoc(doc(editor.db, 'rooms', R), { ownerName: 'Dueno2' }))
+  await allow(9, 'viewer lee ownerName', async () => {
+    if ((await read(v9, `rooms/${R}`)).data().ownerName !== 'Dueno2') throw new Error('ownerName no visible')
+  })
+  await allow(9, 'push no pierde ownerName', async () => {
+    await pushLike(owner, R, 'o9')
+    if ((await read(owner, `rooms/${R}`)).data().ownerName !== 'Dueno2') throw new Error('ownerName perdido')
+  })
+  await deny(9, 'viewer escribe ownerName', () => updateDoc(doc(v9.db, 'rooms', R), { ownerName: 'Hack' }))
+  await deny(9, 'atacante escribe ownerName', () => updateDoc(doc(attacker.db, 'rooms', R), { ownerName: 'Hack' }))
+  await deny(9, 'owner ownerName vacio', () => updateDoc(doc(owner.db, 'rooms', R), { ownerName: '' }))
+  await deny(9, 'owner ownerName 41 chars', () => updateDoc(doc(owner.db, 'rooms', R), { ownerName: 'x'.repeat(41) }))
+  await deny(9, 'owner ownerName no string', () => updateDoc(doc(owner.db, 'rooms', R), { ownerName: 7 }))
+
+  await allow(9, 'owner lista viewers de la sala', async () => {
+    const s = await listViewersOf(owner, R)
+    if (s.size < 3) throw new Error('listado incompleto: ' + s.size)
+  })
+  await allow(9, 'editor lista viewers de la sala', async () => {
+    const s = await listViewersOf(editor, R)
+    if (s.size < 3) throw new Error('listado incompleto: ' + s.size)
+  })
+  await deny(9, 'viewer lista viewers', () => listViewersOf(v9, R))
+  await deny(9, 'atacante lista viewers', () => listViewersOf(attacker, R))
+  await deny(9, 'editor viejo (claim invalido) lista viewers', async () => {
+    const tmp = await makeUser('tmpListEditor')
+    await claim(tmp, R, 'editor', H(editTok))
+    await listViewersOf(tmp, R)
+  })
+  await deny(9, 'listado sin filtro de sala/rol', () => getDocs(collection(owner.db, 'roomAccess')))
+
+  await allow(9, 'editor revoca viewer (quitar acceso)', () => updateDoc(claimRef(editor, R, v9.uid), { revoked: true }))
+  await allow(9, 'owner revoca viewer', () => updateDoc(claimRef(owner, R, v9c.uid), { revoked: true }))
+  await deny(9, 'viewer revocado no lee la sala', () => read(v9, `rooms/${R}`))
+  await deny(9, 'viewer revocado no recrea claim (setDoc)', () => rawClaim(v9, R, vClaim(R)))
+  await deny(9, 'viewer revocado no actualiza claim', () => updateDoc(claimRef(v9, R, v9.uid), { name: 'Otro' }))
+  await deny(9, 'viewer revocado no quita revoked (deleteField)', () => updateDoc(claimRef(v9, R, v9.uid), { revoked: deleteField() }))
+  await deny(9, 'viewer revocado no borra su claim', () => deleteDoc(claimRef(v9, R, v9.uid)))
+  await deny(9, 'viewer revocado por owner no lee', () => read(v9c, `rooms/${R}`))
+  await allow(9, 'viewer revocado sigue viendo su propio claim', () => read(v9, `roomAccess/${R}_${v9.uid}`))
+  await allow(9, 'viewer no revocado sigue leyendo', () => read(v9b, `rooms/${R}`))
+  await allow(9, 'listado muestra revoked', async () => {
+    const s = await listViewersOf(owner, R)
+    if (!s.docs.some((d) => d.id === `${R}_${v9.uid}` && d.data().revoked === true)) throw new Error('revoked no listado')
+  })
+  await deny(9, 'viewer borra claim de otro', () => deleteDoc(claimRef(v9b, R, v9.uid)))
+  await allow(9, 'editor borra claim de viewer', () => deleteDoc(claimRef(editor, R, v9b.uid)))
+  await deny(9, 'viewer sin claim tras borrado no lee', () => read(v9b, `rooms/${R}`))
+  await deny(9, 'editor no borra claim de editor', () => deleteDoc(claimRef(editor, R, attacker.uid)))
+  await allow(9, 'owner borra cualquier claim', () => deleteDoc(claimRef(owner, R, attacker.uid)))
+
+  return [owner, editor, viewer, attacker, v9, v9b, v9c, v9d]
 }
 
 const STUB = 'data:text/javascript,' + encodeURIComponent(
@@ -289,7 +375,8 @@ async function syncSuite() {
     })
     return { u, st, sync, use: () => stub.__set(u) }
   }
-  const O = mk(owner), E = mk(editor), V = mk(viewer)
+  const viewer3 = await makeUser('s-viewer3')
+  const O = mk(owner), E = mk(editor), V = mk(viewer), V3 = mk(viewer3)
   const room = 'SYNCROOM'
   const t = await generateRoomTokens()
 
@@ -309,16 +396,104 @@ async function syncSuite() {
     if (!d.tasks.some((x) => x.id === 's2')) throw new Error('push no llego')
     if (E.st.migrated) throw new Error('migro una sala no legada')
   })
-  await allow('S', 'createSync.start viewer recibe estado', async () => {
+  await allow('S', 'createSync.joinAsViewer recibe estado', async () => {
     V.use()
-    await V.sync.start(room, t.viewToken, 'viewer')
+    const r = await V.sync.joinAsViewer(room, t.viewToken, '  Vera  ')
+    if (!r.ok) throw new Error(r.error)
     await until(() => V.st.tasks.some((x) => x.id === 's2'))
+  })
+  await deny('S', 'createSync.joinAsViewer nombre invalido', async () => {
+    V3.use()
+    const r = await V3.sync.joinAsViewer(room, t.viewToken, '   ')
+    if (!r.ok) throw new Error(r.error)
+  })
+  await deny('S', 'createSync.joinAsViewer nombre de 41 chars', async () => {
+    V3.use()
+    const r = await V3.sync.joinAsViewer(room, t.viewToken, 'x'.repeat(41))
+    if (!r.ok) throw new Error(r.error)
+  })
+  await allow('S', 'createSync.joinAsViewer segundo viewer', async () => {
+    V3.use()
+    const r = await V3.sync.joinAsViewer(room, t.viewToken, 'Carla')
+    if (!r.ok) throw new Error(r.error)
+    await until(() => V3.st.tasks.some((x) => x.id === 's2'))
+  })
+  await allow('S', 'createSync.listViewers (editor) ve ambos con nombre recortado', async () => {
+    E.use()
+    let list = null
+    const off = E.sync.listViewers((l) => { list = l })
+    try {
+      await until(() => list && list.length === 2)
+      const names = list.map((v) => v.name).sort().join(',')
+      if (names !== 'Carla,Vera') throw new Error('nombres: ' + names)
+      if (list.some((v) => v.revoked || !v.uid || !v.joinedAt)) throw new Error('forma incorrecta')
+    } finally { off() }
+  })
+  await deny('S', 'createSync.listViewers (viewer) no lista', async () => {
+    V3.use()
+    let err = null
+    const off = V3.sync.listViewers(() => {}, (e) => { err = e })
+    try { await until(() => err) } finally { off() }
+    throw new Error(err)
+  })
+  await allow('S', 'createSync.setOwnerName por owner y viewer lo lee', async () => {
+    O.use()
+    await O.sync.start(room, t.editToken, 'editor')
+    const r = await O.sync.setOwnerName('  Dueno  ')
+    if (!r.ok) throw new Error(r.error)
+    const d = (await read(viewer, `rooms/${room}`)).data()
+    if (d.ownerName !== 'Dueno') throw new Error('ownerName: ' + d.ownerName)
+  })
+  await deny('S', 'createSync.setOwnerName invalido', async () => {
+    O.use()
+    const r = await O.sync.setOwnerName('   ')
+    if (!r.ok) throw new Error(r.error)
+  })
+  await deny('S', 'createSync.setOwnerName por viewer', async () => {
+    V.use()
+    const r = await V.sync.setOwnerName('Hack')
+    if (!r.ok) throw new Error(r.error)
+  })
+  await allow('S', 'createSync.revokeViewer por editor', async () => {
+    E.use()
+    const r = await E.sync.revokeViewer(viewer.uid)
+    if (!r.ok) throw new Error(r.error)
+    const s = await listViewersOf(owner, room)
+    if (!s.docs.some((d) => d.id === `${room}_${viewer.uid}` && d.data().revoked === true)) throw new Error('no revocado')
+  })
+  await deny('S', 'createSync.revokeViewer por viewer', async () => {
+    V3.use()
+    const r = await V3.sync.revokeViewer(viewer.uid)
+    if (!r.ok) throw new Error(r.error)
+  })
+  await deny('S', 'createSync.viewer revocado no se re-une con el link', async () => {
+    V.use()
+    V.st.statuses.length = 0
+    await V.sync.joinAsViewer(room, t.viewToken, 'Vera')
+    if (V.st.statuses.includes('auth-error')) throw new Error('bloqueado')
   })
   const nv = await generateRoomTokens()
   await allow('S', 'createSync.renewViewToken por editor', async () => {
     E.use()
     const r = await E.sync.renewViewToken(room, nv.viewTokenHash)
     if (!r.ok) throw new Error(r.error)
+  })
+  await allow('S', 'renovar corta a todos: claims activos borrados, revocados conservados', async () => {
+    const ids = (await listViewersOf(owner, room)).docs.map((d) => d.id)
+    if (ids.length !== 1 || ids[0] !== `${room}_${viewer.uid}`) throw new Error('claims: ' + ids.join(','))
+  })
+  await deny('S', 'viewer activo pierde lectura tras renovar', () => read(viewer3, `rooms/${room}`))
+  await allow('S', 'viewer activo se re-une con el link nuevo', async () => {
+    V3.use()
+    const r = await V3.sync.joinAsViewer(room, nv.viewToken, 'Carla')
+    if (!r.ok) throw new Error(r.error)
+    await until(() => V3.st.tasks.some((x) => x.id === 's2'))
+  })
+  await deny('S', 'viewer revocado sigue bloqueado con el link nuevo', async () => {
+    V.use()
+    V.st.statuses.length = 0
+    await V.sync.joinAsViewer(room, nv.viewToken, 'Vera')
+    if (V.st.statuses.includes('auth-error')) throw new Error('bloqueado')
   })
   await allow('S', 'createSync.rotateEditToken por editor -> start con token nuevo', async () => {
     E.use()
@@ -331,7 +506,46 @@ async function syncSuite() {
     const d = (await read(owner, `rooms/${room}`)).data()
     if (!d.tasks.some((x) => x.id === 's3')) throw new Error('push tras rotacion no llego; statuses=' + E.st.statuses.join(','))
   })
-  E.sync.stop(); V.sync.stop(); O.sync.stop()
+  E.sync.stop(); V.sync.stop(); V3.sync.stop(); O.sync.stop()
+
+  const limitRoom = 'LIMITROOM'
+  const lm = await generateRoomTokens()
+  const fillers = []
+  await allow('S', 'tope: sala con 10 viewers activos', async () => {
+    O.use()
+    const r = await O.sync.createRoom(limitRoom, lm.editTokenHash, lm.viewTokenHash, [], {})
+    if (!r.ok) throw new Error(r.error)
+    for (let i = 0; i < 10; i++) {
+      const f = await makeUser(`s-fill${i}`)
+      fillers.push(f)
+      await rawClaim(f, limitRoom, { role: 'viewer', proof: lm.viewTokenHash, roomId: limitRoom, name: `F${i}`, joinedAt: Date.now() + i })
+    }
+    if ((await listViewersOf(owner, limitRoom)).size !== 10) throw new Error('no hay 10 claims')
+  })
+  await deny('S', 'tope: joinAsViewer con 10 activos -> viewer-limit', async () => {
+    O.use()
+    const r = await O.sync.joinAsViewer(limitRoom, lm.viewToken, 'Extra')
+    if (!r.ok) throw new Error(r.error)
+  })
+  await allow('S', 'tope: error exacto es viewer-limit y no crea claim', async () => {
+    O.use()
+    const r = await O.sync.joinAsViewer(limitRoom, lm.viewToken, 'Extra')
+    if (r.ok || r.error !== 'viewer-limit') throw new Error('got ' + JSON.stringify(r))
+    if ((await listViewersOf(owner, limitRoom)).size !== 10) throw new Error('se creo claim')
+  })
+  await allow('S', 'tope: con un revocado cabe uno nuevo; revocados no cuentan', async () => {
+    await updateDoc(claimRef(owner, limitRoom, fillers[0].uid), { revoked: true })
+    O.use()
+    const r = await O.sync.joinAsViewer(limitRoom, lm.viewToken, 'Extra')
+    if (!r.ok) throw new Error(r.error)
+    O.sync.stop()
+  })
+  await allow('S', 'tope: viewer existente puede re-unirse con 10 activos', async () => {
+    O.use()
+    const r = await O.sync.joinAsViewer(limitRoom, lm.viewToken, 'Extra')
+    if (!r.ok) throw new Error(r.error)
+    O.sync.stop()
+  })
 
   const legacy = 'SYNCLEGACY'
   const lt = await generateRoomTokens()
@@ -354,7 +568,7 @@ async function syncSuite() {
     await until(() => V2.st.tasks.some((x) => x.id === 'L'))
   })
   E2.sync.stop(); V2.sync.stop()
-  return [owner, editor, viewer]
+  return [owner, editor, viewer, viewer3, ...fillers]
 }
 
 const users = []

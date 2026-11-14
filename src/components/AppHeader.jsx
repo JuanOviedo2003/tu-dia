@@ -22,7 +22,7 @@ function MobileHeader({ titleShort, eyebrow, progress, onPrev, onNext, prevLabel
   )
 }
 
-function DesktopHeader({ view, onViewChange, titleLong, onPrev, onNext, onToday, prevLabel, nextLabel, sync, onShare, isViewer }) {
+function DesktopHeader({ view, onViewChange, titleLong, onPrev, onNext, onToday, prevLabel, nextLabel, sync, onShare, isViewer, sharedLabel, onOpenShared }) {
   return (
     <header className="flex min-h-16 flex-wrap items-center gap-x-4 gap-y-2 border-b border-s3 bg-s1 px-4 py-2.5">
       <span className="text-heading font-semibold text-t1">Agenda</span>
@@ -36,9 +36,12 @@ function DesktopHeader({ view, onViewChange, titleLong, onPrev, onNext, onToday,
       <div className="flex-1" />
       {isViewer && <Chip>Solo lectura</Chip>}
       <SyncIndicator status={sync.status} room={sync.room} />
-      <Button icon="share" onClick={onShare}>
-        Compartir
-      </Button>
+      {sharedLabel && <Button onClick={onOpenShared}>{sharedLabel}</Button>}
+      {!isViewer && (
+        <Button icon="share" onClick={onShare}>
+          Compartir
+        </Button>
+      )}
     </header>
   )
 }

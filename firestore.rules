@@ -19,7 +19,8 @@ service cloud.firestore {
       return isHash(tokenHash)
         && exists(claimPath)
         && get(claimPath).data.role == role
-        && get(claimPath).data.proof == tokenHash;
+        && get(claimPath).data.proof == tokenHash
+        && get(claimPath).data.get('revoked', false) != true;
     }
 
     function isRoomOwner(roomId) {
@@ -27,18 +28,70 @@ service cloud.firestore {
         && get(roomPath(roomId)).data.ownerUid == request.auth.uid;
     }
 
-    match /roomAccess/{claimId} {
-      allow create, update: if request.auth != null
-        && request.auth.uid == claimId.split('_')[1]
-        && request.resource.data.role in ['editor', 'viewer']
-        && request.resource.data.proof is string
-        && request.resource.data.proof.size() == 64;
+    function isRoomEditor(roomId) {
+      let keys = keysPath(roomId);
+      return (exists(keys) && hasClaim(roomId, 'editor', get(keys).data.get('editTokenHash', null)))
+        || (!exists(keys) && exists(roomPath(roomId)) && hasClaim(roomId, 'editor', get(roomPath(roomId)).data.get('editTokenHash', null)));
+    }
 
-      allow read: if request.auth != null
-        && request.auth.uid == claimId.split('_')[1];
+    function isRoomManager(roomId) {
+      return isRoomOwner(roomId) || isRoomEditor(roomId);
+    }
+
+    match /roomAccess/{claimId} {
+
+      function claimRoom() {
+        return claimId.split('_')[0];
+      }
+
+      function isSelf() {
+        return request.auth != null && request.auth.uid == claimId.split('_')[1];
+      }
+
+      function validSelfClaim() {
+        let d = request.resource.data;
+        return d.role in ['editor', 'viewer']
+          && d.proof is string
+          && d.proof.size() == 64
+          && !d.keys().hasAny(['revoked'])
+          && (
+            (d.role == 'editor'
+              && d.keys().hasOnly(['role', 'proof', 'roomId'])
+              && d.get('roomId', claimRoom()) == claimRoom())
+            || (d.role == 'viewer'
+              && d.keys().hasOnly(['role', 'proof', 'roomId', 'name', 'joinedAt'])
+              && d.get('roomId', null) == claimRoom()
+              && d.get('name', null) is string
+              && d.name.size() <= 40
+              && d.name.matches('(?s).*\\S.*')
+              && (d.get('joinedAt', null) is number || d.get('joinedAt', null) is timestamp))
+          );
+      }
+
+      function isManagerRevoke() {
+        return request.auth != null
+          && resource.data.role == 'viewer'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['revoked'])
+          && request.resource.data.revoked == true
+          && isRoomManager(claimRoom());
+      }
+
+      allow create: if isSelf() && validSelfClaim();
+
+      allow update: if (isSelf() && resource.data.get('revoked', false) != true && validSelfClaim())
+        || isManagerRevoke();
+
+      allow read: if isSelf();
+
+      allow list: if request.auth != null
+        && resource.data.role == 'viewer'
+        && isRoomManager(resource.data.roomId);
 
       allow delete: if request.auth != null
-        && get(/databases/$(database)/documents/rooms/$(claimId.split('_')[0])).data.ownerUid == request.auth.uid;
+        && (
+          get(/databases/$(database)/documents/rooms/$(claimRoom())).data.ownerUid == request.auth.uid
+          || (resource.data.role == 'viewer' && isRoomEditor(claimRoom()))
+        );
     }
 
     match /roomKeys/{roomId} {
@@ -85,6 +138,12 @@ service cloud.firestore {
           && onlyRemoves(changed, 'viewTokenHash');
       }
 
+      function validOwnerName() {
+        let d = request.resource.data;
+        return !d.keys().hasAny(['ownerName'])
+          || (d.ownerName is string && d.ownerName.size() <= 40 && d.ownerName.matches('(?s).*\\S.*'));
+      }
+
       allow read: if request.auth != null
         && (
           resource.data.ownerUid == request.auth.uid
@@ -93,6 +152,7 @@ service cloud.firestore {
         );
 
       allow create: if request.auth != null
+        && validOwnerName()
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.tasks is list
         && request.resource.data.tasks.size() <= 500
@@ -100,6 +160,7 @@ service cloud.firestore {
         && request.resource.data.tombstones.size() <= 600;
 
       allow update: if request.auth != null
+        && validOwnerName()
         && request.resource.data.tasks is list
         && request.resource.data.tasks.size() <= 500
         && request.resource.data.tombstones is map

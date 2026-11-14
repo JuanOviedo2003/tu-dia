@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTasks } from './useTasks'
+import { readViewerLink, useSharedAgenda } from './useSharedAgenda'
+import { normalizeRoomCode, parseInviteParams, truncateName } from '../lib/share'
 import {
+  clearRoomCredentials,
+  migrateLegacyViewer,
   saveRoomCode,
   loadRoomCode,
   saveToken,
@@ -9,6 +13,10 @@ import {
   loadRole,
   saveViewToken,
   loadViewToken,
+  saveProfileName,
+  loadProfileName,
+  saveOwnRoom,
+  loadOwnRoom,
 } from '../lib/storage'
 
 export const ROOM_STATES = {
@@ -27,10 +35,6 @@ function saveRoomCredentials(code, token, role, viewToken) {
   saveToken(token)
   saveRole(role)
   saveViewToken(viewToken)
-}
-
-function clearRoomCredentials() {
-  saveRoomCredentials(null, null, null, null)
 }
 
 function clearRoomParams() {
@@ -53,7 +57,16 @@ export function useAgenda() {
   const [tokens, setTokens] = useState(NO_TOKENS)
   const [pendingJoin, setPendingJoin] = useState(null)
 
+  const [profileName, setProfileName] = useState(loadProfileName)
+  const [ownRoomCode, setOwnRoomCode] = useState(loadOwnRoom)
+  const [ownError, setOwnError] = useState(false)
+  const [booted, setBooted] = useState(false)
+  const [onlineTick, setOnlineTick] = useState(0)
+
   const pendingCreds = useRef(null)
+  const creatingRef = useRef(false)
+  const occupiedRef = useRef(false)
+  const nameSyncedRef = useRef('')
 
   const handleEditTokenMigrated = (code, editToken) => {
     if (pendingCreds.current?.code === code) pendingCreds.current = { ...pendingCreds.current, token: editToken }
@@ -62,11 +75,29 @@ export function useAgenda() {
     setTokens((prev) => ({ ...prev, editToken }))
   }
 
+  const saveProfile = (name) => {
+    const clean = truncateName(name)
+    if (!clean) return null
+    saveProfileName(clean)
+    setProfileName(clean)
+    return clean
+  }
+
+  const shared = useSharedAgenda({ profileName, saveProfile })
+  const { join: joinShared, close: closeShared } = shared
+
   const api = useTasks(roomRole, handleEditTokenMigrated)
   const { syncStatus, initSync, createRoom, renewViewToken: renewView, rotateEditToken: rotateEdit, stop } = api
   const localCount = api.tasks.length
 
+  const clearOwnRoom = () => {
+    saveOwnRoom(null)
+    setOwnRoomCode('')
+  }
+
   const joinRoom = (code, token, role, discardLocal = false) => {
+    closeShared()
+    if (code !== ownRoomCode) clearOwnRoom()
     pendingCreds.current = { code, token, role }
     setRoomCode(code)
     setRoomState(ROOM_STATES.VALIDATING)
@@ -76,13 +107,17 @@ export function useAgenda() {
   }
 
   const requestJoin = (code, token, role) => {
-    const nextRole = role === 'viewer' ? 'viewer' : 'editor'
-    if (nextRole === 'viewer' || localCount === 0) {
+    if (role === 'viewer') {
       setPendingJoin(null)
-      joinRoom(code, token, nextRole)
+      joinShared(code, token)
       return
     }
-    setPendingJoin({ code, token, role: nextRole, localCount })
+    if (localCount === 0) {
+      setPendingJoin(null)
+      joinRoom(code, token, 'editor')
+      return
+    }
+    setPendingJoin({ code, token, role: 'editor', localCount })
   }
 
   const confirmJoin = (mode) => {
@@ -95,23 +130,29 @@ export function useAgenda() {
   const cancelJoin = () => setPendingJoin(null)
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const urlRoom = params.get('room')
-    const urlToken = params.get('t')
-    const urlRole = params.get('role')
+    const { room: urlRoom, token: urlToken, role: urlRole } = parseInviteParams(new URLSearchParams(window.location.search))
 
-    if (urlRoom && urlToken) {
-      requestJoin(urlRoom.toUpperCase().replace(/-V$/, ''), urlToken, urlRole || 'editor')
+    const viewerLink = readViewerLink()
+
+    if (urlRoom && urlToken && !viewerLink) {
+      requestJoin(normalizeRoomCode(urlRoom), urlToken, urlRole || 'editor')
       clearRoomParams()
-    } else if (urlRoom) {
-      setRoomCode(urlRoom.toUpperCase().replace(/-V$/, ''))
+    } else if (urlRoom && !viewerLink) {
+      setRoomCode(normalizeRoomCode(urlRoom))
       setRoomState(ROOM_STATES.DENIED)
     } else {
+      if (viewerLink) {
+        joinShared(viewerLink.code, viewerLink.token)
+        clearRoomParams()
+      }
       const storedRoomCode = loadRoomCode()
       const storedToken = loadToken()
       const storedRole = loadRole() || 'editor'
 
-      if (storedRoomCode && storedToken) {
+      if (migrateLegacyViewer()) {
+        setRoomCode('')
+        setRoomState(ROOM_STATES.IDLE)
+      } else if (storedRoomCode && storedToken) {
         setRoomCode(storedRoomCode)
         setRoomState(ROOM_STATES.VALIDATING)
         setRoomRole(storedRole)
@@ -123,6 +164,7 @@ export function useAgenda() {
         setRoomState(ROOM_STATES.IDLE)
       }
     }
+    setBooted(true)
   }, [initSync])
 
   useEffect(() => {
@@ -142,19 +184,55 @@ export function useAgenda() {
   }, [syncStatus, roomState, roomRole])
 
   const createNewRoom = async () => {
-    const result = await createRoom()
-    if (result.ok) {
+    if (creatingRef.current) return { ok: false, error: 'busy' }
+    if (roomCode) return { ok: false, error: 'exists' }
+    creatingRef.current = true
+    setOwnError(false)
+    try {
+      const result = await createRoom(profileName).catch(() => ({ ok: false, error: 'unknown' }))
+      if (!result.ok) {
+        setOwnError(true)
+        return result
+      }
+      if (occupiedRef.current) return { ok: false, error: 'busy' }
       pendingCreds.current = null
       setPendingJoin(null)
       setRoomCode(result.roomCode)
       setRoomState(ROOM_STATES.EDITOR)
       saveRoomCredentials(result.roomCode, result.editToken, 'editor', result.viewToken)
+      saveOwnRoom(result.roomCode)
+      setOwnRoomCode(result.roomCode)
       setRoomRole('editor')
       setTokens({ editToken: result.editToken, viewToken: result.viewToken })
       initSync(result.roomCode, result.editToken, 'editor')
+      return result
+    } finally {
+      creatingRef.current = false
     }
-    return result
   }
+
+  const occupied = roomState !== ROOM_STATES.IDLE || Boolean(pendingJoin) || shared.active
+  occupiedRef.current = occupied
+
+  useEffect(() => {
+    const onOnline = () => setOnlineTick((n) => n + 1)
+    window.addEventListener('online', onOnline)
+    return () => window.removeEventListener('online', onOnline)
+  }, [])
+
+  useEffect(() => {
+    if (!booted || !profileName || occupied || ownRoomCode || loadRoomCode()) return
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+    createNewRoom()
+  }, [booted, profileName, roomState, pendingJoin, onlineTick, shared.active])
+
+  useEffect(() => {
+    if (roomState !== ROOM_STATES.EDITOR || !profileName || api.roomOwnerName || roomCode === ownRoomCode) return
+    const key = `${roomCode}:${profileName}`
+    if (nameSyncedRef.current === key) return
+    nameSyncedRef.current = key
+    api.setOwnerName(profileName)
+  }, [roomState, roomCode, profileName, api.roomOwnerName, ownRoomCode])
 
   const canManageTokens = Boolean(roomCode) && roomRole === 'editor'
 
@@ -183,26 +261,35 @@ export function useAgenda() {
   const leaveRoom = () => {
     stop()
     clearRoomCredentials()
+    clearOwnRoom()
     resetToLocal()
   }
 
   const inRoom = roomState === ROOM_STATES.EDITOR || roomState === ROOM_STATES.VIEWER
 
+  const isOwn = Boolean(roomCode) && roomCode === ownRoomCode
+  const ownerLabel = api.roomOwnerName || (isOwn || !roomCode ? profileName : '')
+  const agendaName = ownerLabel ? `Agenda de ${ownerLabel}` : ''
+
   return {
-    api,
+    api: shared.active ? { ...api, tasks: shared.tasks, syncStatus: shared.status } : api,
+    shared,
+    profileName,
+    saveProfile,
+    ownAgenda: ownRoomCode ? 'ready' : ownError ? 'error' : 'creating',
+    agendaName,
     room: {
       state: roomState,
       code: roomCode,
       role: roomRole,
       inRoom,
-      isViewer: roomRole === 'viewer',
+      isViewer: shared.active,
       tokens,
     },
     requestJoin,
     pendingJoin,
     confirmJoin,
     cancelJoin,
-    createNewRoom,
     renewViewToken,
     rotateEditToken,
     leaveRoom,
