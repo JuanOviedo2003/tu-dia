@@ -55,9 +55,9 @@ function LinkActions({ copied, onCopy, onShare, qrVisible, onToggleQr, canvasRef
   const copyLabel = copied ? '¡Copiado!' : copyText
   return (
     <>
-      <div className={cx('grid gap-2', onShare ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2')}>
+      <div className="grid grid-cols-1 gap-2 min-[400px]:grid-cols-[minmax(0,1fr)_auto]">
         {onShare && (
-          <Button variant="primary" icon="share" onClick={onShare}>
+          <Button variant="primary" icon="share" onClick={onShare} className="min-[400px]:col-span-2">
             Compartir…
           </Button>
         )}
@@ -68,7 +68,7 @@ function LinkActions({ copied, onCopy, onShare, qrVisible, onToggleQr, canvasRef
       </div>
       {qrVisible && (
         <div className="flex justify-center rounded-md border border-line bg-s2 p-3">
-          <canvas ref={canvasRef} className="h-[240px] w-[240px]" aria-label={qrLabel} />
+          <canvas ref={canvasRef} className="aspect-square h-auto w-full max-w-[220px]" aria-label={qrLabel} />
         </div>
       )}
     </>
@@ -89,8 +89,8 @@ function MissingLink({ text, label, pendingLabel, pending, busy, onAction }) {
 function PersonRow({ person, busy, onRevoke }) {
   return (
     <li className={cx('flex min-h-11 items-center justify-between gap-3 py-2', person.revoked && 'opacity-60')}>
-      <div className="min-w-0">
-        <p className="truncate text-body font-medium text-t1">{person.name || 'Sin nombre'}</p>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-body font-medium text-t1" title={person.name || undefined}>{person.name || 'Sin nombre'}</p>
         <p className="text-small text-t2">
           {person.revoked ? 'Acceso retirado' : person.joinedLabel ? `Desde el ${person.joinedLabel}` : 'Con acceso'}
         </p>
@@ -99,6 +99,7 @@ function PersonRow({ person, busy, onRevoke }) {
         <Button
           variant="danger"
           disabled={busy}
+          className="shrink-0 whitespace-nowrap px-3"
           onClick={() => onRevoke(person)}
           aria-label={`Quitar acceso a ${person.name || 'esta persona'}`}
         >
@@ -165,7 +166,7 @@ export default function ShareView({
 
   return (
     <div className="space-y-4">
-      {agendaName && <p className="text-body font-medium text-t2">{agendaName}</p>}
+      {agendaName && <p className="break-words text-body font-medium text-t2">{agendaName}</p>}
 
       {authError && <Notice tone="danger">El link ya no es válido. Pide uno nuevo a quien te lo compartió.</Notice>}
       {roomNotFound && <Notice tone="danger">Esta agenda compartida ya no existe.</Notice>}
@@ -180,7 +181,7 @@ export default function ShareView({
 
       {isEditor && (
         <>
-          <section className="space-y-3 rounded-md border border-line bg-s1 p-4">
+          <section className="space-y-3 rounded-md border border-line bg-s1 p-3 sm:p-4">
             <h3 className="text-heading font-semibold text-t1">Mis dispositivos</h3>
             <p className="text-small text-t2">Abre tu agenda en otro dispositivo tuyo.</p>
             {editUrl ? (
@@ -206,10 +207,10 @@ export default function ShareView({
             <p className="text-small text-t3">Este link da control total sobre tu agenda: no lo compartas con otras personas.</p>
           </section>
 
-          <section className="space-y-3 rounded-md border border-line bg-s1 p-4">
+          <section className="space-y-3 rounded-md border border-line bg-s1 p-3 sm:p-4">
             <div className="flex items-baseline justify-between gap-2">
-              <h3 className="text-heading font-semibold text-t1">Personas con acceso</h3>
-              <span className="text-small text-t2">
+              <h3 className="min-w-0 text-heading font-semibold text-t1">Personas con acceso</h3>
+              <span className="shrink-0 whitespace-nowrap text-small text-t2">
                 {activeCount} de {MAX_VIEWERS} personas
               </span>
             </div>

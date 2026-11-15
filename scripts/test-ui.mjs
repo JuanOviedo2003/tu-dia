@@ -535,6 +535,29 @@ async function shortcutLayoutKey(page) {
   assert((await page.getByRole('menu').count()) === 0, 'Alt con símbolo abrió el menú');
 }
 
+async function shareFits(page) {
+  const viewport = page.viewportSize();
+  if (viewport.width < 600) {
+    await page.getByRole('navigation', { name: 'Navegación principal' }).getByRole('button', { name: 'Menú', exact: true }).click();
+    await page.getByRole('button', { name: /Compartir/ }).click();
+  } else {
+    await page.getByRole('button', { name: /Compartir/ }).first().click();
+  }
+  const dialog = page.getByRole('dialog', { name: 'Compartir' });
+  await dialog.waitFor();
+  await page.getByText('Sin conexión: se creará cuando haya red.').or(page.getByText('Creando tu agenda…')).waitFor();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - innerWidth);
+  assert(overflow <= 0, `scroll horizontal de ${overflow}px`);
+  await page.waitForTimeout(500);
+  const box = await dialog.boundingBox();
+  assert(
+    box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width && box.y + box.height <= viewport.height,
+    `el diálogo se sale: ${JSON.stringify(box)}`,
+  );
+  const close = await dialog.getByRole('button', { name: 'Cerrar', exact: true }).first().boundingBox();
+  assert(close.width >= 44 && close.height >= 44, `botón cerrar ${close.width}x${close.height}`);
+}
+
 async function main() {
   let server;
   let browser;
@@ -602,6 +625,8 @@ async function main() {
     await runCase(browser, '21. Voz: con mock anexa texto', { init: MOCK_SPEECH }, voiceMock);
     await runCase(browser, '22. Voz: enviar no duplica texto', { init: MOCK_SPEECH }, voiceSubmit);
     await runCase(browser, '23. Alt+símbolo no abre menú', {}, shortcutLayoutKey);
+    await runCase(browser, '24. Compartir cabe en 360x640', { viewport: { width: 360, height: 640 } }, shareFits);
+    await runCase(browser, '25. Compartir cabe en 1280x800', {}, shareFits);
   } catch (error) {
     results.push({ name: 'ejecución sin excepciones', ok: false, detail: error && error.message ? error.message : String(error) });
   } finally {

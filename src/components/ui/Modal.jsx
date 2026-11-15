@@ -40,15 +40,17 @@ export default function Modal({
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         className={cx(
-          'rise-in max-h-[92dvh] w-full overflow-y-auto rounded-t-lg border border-line bg-s2 p-5 shadow-menu outline-none sm:rounded-lg',
+          'rise-in flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-lg border border-line bg-s2 shadow-menu outline-none sm:max-h-[85dvh] sm:rounded-lg',
           width,
         )}
       >
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 id={titleId} className="text-title font-semibold text-t1">{title}</h2>
+        <div className="flex shrink-0 items-center justify-between gap-3 px-4 pb-3 pt-4 sm:px-5 sm:pt-5">
+          <h2 id={titleId} className="min-w-0 text-title font-semibold text-t1">{title}</h2>
           <IconButton icon="close" label="Cerrar" onClick={onClose} className="-mr-2" />
         </div>
-        {children}
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:px-5 sm:pb-5">
+          {children}
+        </div>
       </div>
     </div>,
     document.body,
