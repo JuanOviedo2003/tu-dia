@@ -558,6 +558,37 @@ async function shareFits(page) {
   assert(close.width >= 44 && close.height >= 44, `botón cerrar ${close.width}x${close.height}`);
 }
 
+const SEED_ROOM = () => {
+  localStorage.setItem('tu-dia-room-v1', 'ROOMTEST01');
+  localStorage.setItem('tu-dia-token-v1', 'tokentest');
+  localStorage.setItem('tu-dia-role-v1', 'editor');
+  localStorage.setItem('tu-dia-own-room-v1', 'ROOMTEST01');
+};
+
+async function storedRoomNoBlock(page) {
+  await page.getByRole('main').waitFor({ timeout: 3000 });
+  assert((await page.getByText('Validando acceso').count()) === 0, 'aparece Validando acceso');
+  await page.getByText('Local A').first().waitFor({ timeout: 3000 });
+  const input = page.getByLabel('Añadir tarea rápida');
+  await input.fill('Nueva en segundo plano');
+  await input.press('Enter');
+  await page.getByText('Nueva en segundo plano').first().waitFor();
+  const label = await page.getByText(/Sincronizando…|Sin conexión/).count();
+  assert(label > 0, 'el indicador de sync no muestra estado de espera');
+  assert((await page.getByText(/Agenda privada|Agenda no encontrada|Sin respuesta/).count()) === 0, 'aviso bloqueante');
+}
+
+async function storedRoomShareVerifying(page) {
+  await page.getByRole('main').waitFor({ timeout: 3000 });
+  await page.getByRole('button', { name: /Compartir/ }).first().click();
+  const dialog = page.getByRole('dialog', { name: 'Compartir' });
+  await dialog.waitFor();
+  await dialog.getByText(/Verificando tu agenda…|Sin conexión: se reintentará solo/).first().waitFor({ timeout: 3000 });
+  assert((await dialog.getByRole('button', { name: /Copiar link/ }).count()) === 0, 'aparece Copiar link');
+  assert((await dialog.getByRole('button', { name: /Mostrar QR/ }).count()) === 0, 'aparece Mostrar QR');
+  assert((await dialog.getByRole('button', { name: /Renovar|Dejar de sincronizar/ }).count()) === 0, 'aparecen acciones de credenciales');
+}
+
 async function main() {
   let server;
   let browser;
@@ -627,6 +658,18 @@ async function main() {
     await runCase(browser, '23. Alt+símbolo no abre menú', {}, shortcutLayoutKey);
     await runCase(browser, '24. Compartir cabe en 360x640', { viewport: { width: 360, height: 640 } }, shareFits);
     await runCase(browser, '25. Compartir cabe en 1280x800', {}, shareFits);
+    await runCase(
+      browser,
+      '26. Credenciales guardadas no bloquean',
+      { init: SEED_ROOM, tasks: [task('Local A', dayStr(0), 'todo')] },
+      storedRoomNoBlock,
+    );
+    await runCase(
+      browser,
+      '27. Compartir sin credenciales confirmadas',
+      { init: SEED_ROOM, tasks: [task('Local A', dayStr(0), 'todo')] },
+      storedRoomShareVerifying,
+    );
   } catch (error) {
     results.push({ name: 'ejecución sin excepciones', ok: false, detail: error && error.message ? error.message : String(error) });
   } finally {

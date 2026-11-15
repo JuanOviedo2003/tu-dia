@@ -39,6 +39,7 @@ export default function ShareModal({
   onRotateEditToken,
   onLeaveRoom,
   syncStatus,
+  verifying,
 }) {
   const share = useShare({
     open,
@@ -53,6 +54,7 @@ export default function ShareModal({
     onJoin,
     onClose,
     syncStatus,
+    verifying,
   })
   const confirmCopy =
     share.confirm === 'revoke'
@@ -101,6 +103,7 @@ export default function ShareModal({
           authError={share.authError}
           roomNotFound={share.roomNotFound}
           offline={share.offline}
+          verifying={verifying}
           statusText={share.statusText}
           statusIcon={share.statusIcon}
           onClose={onClose}

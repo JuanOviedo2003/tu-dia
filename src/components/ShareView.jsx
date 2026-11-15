@@ -158,11 +158,26 @@ export default function ShareView({
   authError,
   roomNotFound,
   offline,
+  verifying,
   statusText,
   statusIcon,
   onClose,
 }) {
   const atLimit = activeCount >= MAX_VIEWERS
+
+  if (verifying) {
+    return (
+      <div className="space-y-4">
+        {agendaName && <p className="break-words text-body font-medium text-t2">{agendaName}</p>}
+        <Notice tone={offline ? 'warning' : 'info'}>
+          {offline ? 'Sin conexión: se reintentará solo.' : 'Verificando tu agenda…'}
+        </Notice>
+        <div className="flex justify-end">
+          <Button onClick={onClose}>Cerrar</Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-4">

@@ -342,10 +342,10 @@ export function createSync({ getState, onState, onStatus, onEditTokenMigrated, o
     role = nextRole
     setStatus('connecting')
     if (nextToken) {
-      const user = await authReady
+      const user = (await authReady) || auth.currentUser
       if (s !== session) return
       if (!user) {
-        setStatus('auth-error')
+        setStatus('offline')
         return
       }
       if (!(await claimOrFail(id, nextToken, nextRole, s, nextName))) return

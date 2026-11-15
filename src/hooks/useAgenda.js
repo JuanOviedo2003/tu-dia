@@ -29,7 +29,9 @@ export const ROOM_STATES = {
   VIEWER: 'viewer',
 }
 
-const NO_TOKENS = { editToken: null, viewToken: null }
+const BG_RETRY_DELAYS_MS = [2000, 5000, 15000, 30000, 60000]
+
+const NO_TOKENS ={ editToken: null, viewToken: null }
 
 function saveRoomCredentials(code, token, role, viewToken) {
   saveRoomCode(code)
@@ -66,12 +68,14 @@ export function useAgenda() {
 
   const [validationTimedOut, setValidationTimedOut] = useState(false)
   const [offlineHold, setOfflineHold] = useState(false)
+  const [validatingInBackground, setValidatingInBackground] = useState(false)
 
   const syncCreds = useRef(null)
   const pendingCreds = useRef(null)
   const creatingRef = useRef(false)
   const occupiedRef = useRef(false)
   const nameSyncedRef = useRef('')
+  const bgRetryRef = useRef(0)
 
   const handleEditTokenMigrated = (code, editToken) => {
     if (pendingCreds.current?.code === code) pendingCreds.current = { ...pendingCreds.current, token: editToken }
@@ -106,6 +110,7 @@ export function useAgenda() {
     pendingCreds.current = { code, token, role }
     syncCreds.current = { code, token, role }
     setOfflineHold(false)
+    setValidatingInBackground(false)
     setRoomCode(code)
     setRoomState(ROOM_STATES.VALIDATING)
     setRoomRole(role)
@@ -160,8 +165,10 @@ export function useAgenda() {
         setRoomCode('')
         setRoomState(ROOM_STATES.IDLE)
       } else if (storedRoomCode && storedToken) {
+        const background = storedRole !== 'viewer'
         setRoomCode(storedRoomCode)
-        setRoomState(ROOM_STATES.VALIDATING)
+        setValidatingInBackground(background)
+        setRoomState(background ? ROOM_STATES.EDITOR : ROOM_STATES.VALIDATING)
         setRoomRole(storedRole)
         setTokens(readTokens(storedRole, storedToken))
         syncCreds.current = { code: storedRoomCode, token: storedToken, role: storedRole }
@@ -176,20 +183,22 @@ export function useAgenda() {
   }, [initSync])
 
   useEffect(() => {
-    if (syncStatus === 'online' && roomState === ROOM_STATES.VALIDATING) {
+    if (syncStatus === 'online' && (roomState === ROOM_STATES.VALIDATING || validatingInBackground)) {
       const creds = pendingCreds.current
       if (creds) {
         pendingCreds.current = null
         saveRoomCredentials(creds.code, creds.token, creds.role, null)
       }
+      setValidatingInBackground(false)
       setRoomState(roomRole === 'viewer' ? ROOM_STATES.VIEWER : ROOM_STATES.EDITOR)
     } else if (syncStatus === 'auth-error' || syncStatus === 'room-not-found') {
+      setValidatingInBackground(false)
       setRoomState(syncStatus === 'auth-error' ? ROOM_STATES.DENIED : ROOM_STATES.NOT_FOUND)
       setTokens(NO_TOKENS)
       if (pendingCreds.current) pendingCreds.current = null
       else clearRoomCredentials()
     }
-  }, [syncStatus, roomState, roomRole])
+  }, [syncStatus, roomState, roomRole, validatingInBackground])
 
   useEffect(() => {
     if (roomState !== ROOM_STATES.VALIDATING) {
@@ -205,6 +214,7 @@ export function useAgenda() {
     const creds = syncCreds.current
     if (!creds) return
     setOfflineHold(false)
+    setValidatingInBackground(false)
     setValidationTimedOut(false)
     setRoomCode(creds.code)
     setRoomRole(creds.role)
@@ -215,6 +225,7 @@ export function useAgenda() {
 
   const continueOffline = () => {
     stop()
+    setValidatingInBackground(false)
     setValidationTimedOut(false)
     setOfflineHold(true)
     setRoomCode('')
@@ -261,8 +272,27 @@ export function useAgenda() {
   }, [])
 
   useEffect(() => {
-    if (onlineTick && (offlineHold || validationTimedOut)) retryValidation()
+    if (!onlineTick) return
+    if (offlineHold || validationTimedOut) retryValidation()
+    else if (validatingInBackground && syncCreds.current) {
+      const { code, token, role } = syncCreds.current
+      initSync(code, token, role)
+    }
   }, [onlineTick])
+
+  useEffect(() => {
+    if (!validatingInBackground || syncStatus !== 'offline' || !syncCreds.current) {
+      if (syncStatus === 'online' || !validatingInBackground) bgRetryRef.current = 0
+      return
+    }
+    const delay = BG_RETRY_DELAYS_MS[Math.min(bgRetryRef.current, BG_RETRY_DELAYS_MS.length - 1)]
+    const timer = setTimeout(() => {
+      bgRetryRef.current += 1
+      const { code, token, role } = syncCreds.current
+      initSync(code, token, role)
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [validatingInBackground, syncStatus])
 
   useEffect(() => {
     if (!booted || !profileName || occupied || ownRoomCode || loadRoomCode()) return
@@ -271,12 +301,12 @@ export function useAgenda() {
   }, [booted, profileName, roomState, pendingJoin, onlineTick, shared.active, offlineHold])
 
   useEffect(() => {
-    if (roomState !== ROOM_STATES.EDITOR || !profileName || api.roomOwnerName || roomCode === ownRoomCode) return
+    if (roomState !== ROOM_STATES.EDITOR || validatingInBackground || !profileName || api.roomOwnerName || roomCode === ownRoomCode) return
     const key = `${roomCode}:${profileName}`
     if (nameSyncedRef.current === key) return
     nameSyncedRef.current = key
     api.setOwnerName(profileName)
-  }, [roomState, roomCode, profileName, api.roomOwnerName, ownRoomCode])
+  }, [roomState, validatingInBackground, roomCode, profileName, api.roomOwnerName, ownRoomCode])
 
   const canManageTokens = Boolean(roomCode) && roomRole === 'editor'
 
@@ -297,6 +327,7 @@ export function useAgenda() {
     pendingCreds.current = null
     syncCreds.current = null
     setOfflineHold(false)
+    setValidatingInBackground(false)
     setRoomCode('')
     setRoomRole('')
     setTokens(NO_TOKENS)
@@ -331,6 +362,7 @@ export function useAgenda() {
       inRoom,
       isViewer: shared.active,
       tokens,
+      validatingInBackground,
       timedOut: validationTimedOut,
       retry: retryValidation,
       continueOffline,

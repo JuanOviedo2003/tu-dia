@@ -331,6 +331,7 @@ export default function App() {
                 closeShare()
               }}
               syncStatus={api.syncStatus}
+              verifying={room.validatingInBackground}
             />
           </Suspense>
         )}

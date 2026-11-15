@@ -23,7 +23,7 @@ function describeStatus({ online, authError, roomNotFound, offline }, role) {
   if (authError) return { text: 'Link no válido', icon: 'danger' }
   if (roomNotFound) return { text: 'Agenda no encontrada', icon: 'danger' }
   if (offline) return { text: 'Sin conexión', icon: 'todo' }
-  return { text: 'Conectando…', icon: 'inprogress' }
+  return { text: 'Verificando…', icon: 'inprogress' }
 }
 
 const canNativeShare = typeof navigator !== 'undefined' && typeof navigator.share === 'function'
@@ -48,6 +48,7 @@ export function useShare({
   onJoin,
   onClose,
   syncStatus,
+  verifying,
 }) {
   const canvasEditRef = useRef(null)
   const canvasViewRef = useRef(null)
@@ -103,10 +104,10 @@ export function useShare({
   }, [open])
 
   useEffect(() => {
-    if (!open || !canManage || !flags.online) return
+    if (!open || !canManage || !flags.online || verifying) return
     setViewersError(false)
     return onListViewers(setViewers, () => setViewersError(true))
-  }, [open, canManage, flags.online, currentRoom])
+  }, [open, canManage, flags.online, currentRoom, verifying])
 
   useQrCanvas(canvasEditRef, editUrl, open && showQr.editor)
   useQrCanvas(canvasViewRef, viewUrl, open && inviteOpen && showQr.viewer)
